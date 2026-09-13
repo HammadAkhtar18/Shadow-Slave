@@ -4,6 +4,7 @@
 #include "Core/ShadowSlavePlayerController.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
+#include "Items/ShadowSlaveInventoryComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -36,6 +37,9 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// Create modular inventory component
+	InventoryComponent = CreateDefaultSubobject<UShadowSlaveInventoryComponent>(TEXT("InventoryComponent"));
 }
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
