@@ -1,0 +1,31 @@
+# Visual Studio / IDE temporary files and folders
+.vs/
+.vscode/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Unreal Engine build outputs and caches
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+
+# Plugins build outputs
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Crash reports & logs
+CrashReportClient/
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
