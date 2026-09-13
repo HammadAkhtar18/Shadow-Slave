@@ -1,11 +1,11 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Characters/ShadowSlavePlayerCharacter.h"
+#include "Core/ShadowSlavePlayerController.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "GameFramework/Controller.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -15,13 +15,22 @@
 AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// Create a camera boom (pulls in towards the player if there is a collision)
+	// Create collision-aware spring arm boom
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f;
+	CameraBoom->TargetArmLength = DefaultTargetArmLength;
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->ProbeSize = 12.0f;
+	CameraBoom->ProbeChannel = ECC_Camera;
+	CameraBoom->SocketOffset = CameraSocketOffset;
+	CameraBoom->TargetOffset = CameraTargetOffset;
+	CameraBoom->bEnableCameraLag = bEnableCameraLag;
+	CameraBoom->CameraLagSpeed = CameraLagSpeed;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationLag;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationLagSpeed;
 
-	// Create a follow camera
+	// Create follow camera positioned at spring arm socket
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
@@ -29,7 +38,7 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	// Add Input Mapping Context if available
+	// Register default Input Mapping Context if defined on character
 	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
@@ -41,46 +50,57 @@ void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* Pla
 		}
 	}
 
-	// Set up action bindings
+	// Bind Enhanced Input actions
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// Jumping
+		// Jump
 		if (JumpAction)
 		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::JumpStarted);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &AShadowSlavePlayerCharacter::JumpStopped);
 		}
 
-		// Moving
+		// Move (WASD / Left Stick)
 		if (MoveAction)
 		{
 			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AShadowSlavePlayerCharacter::Move);
 		}
 
-		// Looking
+		// Look (Mouse / Right Stick)
 		if (LookAction)
 		{
 			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AShadowSlavePlayerCharacter::Look);
 		}
+
+		// Sprint (Left Shift / Gamepad L3)
+		if (SprintAction)
+		{
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::SprintStarted);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &AShadowSlavePlayerCharacter::SprintStopped);
+		}
 	}
 	else
 	{
-		UE_LOG(LogShadowSlave, Error, TEXT("'%s' Failed to find an Enhanced Input component! Enhanced Input system is required."), *GetNameSafe(this));
+		UE_LOG(LogShadowSlave, Error, TEXT("'%s' Failed to find an Enhanced Input component! Enhanced Input is required."), *GetNameSafe(this));
 	}
 }
 
 void AShadowSlavePlayerCharacter::Move(const FInputActionValue& Value)
 {
+	if (!bCanMove)
+	{
+		return;
+	}
+
 	// Value is a Vector2D (X = Right/Left, Y = Forward/Backward)
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
-		// Determine camera/controller direction
+		// Compute camera-relative forward and right directions
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
 
-		// Calculate forward and right vectors
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -97,7 +117,39 @@ void AShadowSlavePlayerCharacter::Look(const FInputActionValue& Value)
 
 	if (Controller != nullptr)
 	{
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		float SensitivityYaw = 1.0f;
+		float SensitivityPitch = 1.0f;
+
+		if (const AShadowSlavePlayerController* PC = Cast<AShadowSlavePlayerController>(Controller))
+		{
+			SensitivityYaw = PC->GetLookSensitivityYaw();
+			SensitivityPitch = PC->GetLookSensitivityPitch();
+		}
+
+		AddControllerYawInput(LookAxisVector.X * SensitivityYaw);
+		AddControllerPitchInput(LookAxisVector.Y * SensitivityPitch);
 	}
+}
+
+void AShadowSlavePlayerCharacter::JumpStarted()
+{
+	if (bCanMove)
+	{
+		Jump();
+	}
+}
+
+void AShadowSlavePlayerCharacter::JumpStopped()
+{
+	StopJumping();
+}
+
+void AShadowSlavePlayerCharacter::SprintStarted()
+{
+	StartSprint();
+}
+
+void AShadowSlavePlayerCharacter::SprintStopped()
+{
+	StopSprint();
 }

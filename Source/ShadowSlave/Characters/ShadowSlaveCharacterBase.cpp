@@ -9,46 +9,145 @@ AShadowSlaveCharacterBase::AShadowSlaveCharacterBase(const FObjectInitializer& O
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Set size for collision capsule
+	// Set size for standard humanoid collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
 
-	// Don't rotate when the controller rotates. Let that just affect the camera.
+	// Character rotation is decoupled from controller orientation (camera rotates independently)
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// Configure character movement for responsive action RPG feel
+	// Orient character toward movement direction
 	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 
-	GetCharacterMovement()->JumpZVelocity = 700.0f;
-	GetCharacterMovement()->AirControl = 0.35f;
-	GetCharacterMovement()->MaxWalkSpeed = 500.0f;
-	GetCharacterMovement()->MinAnalogWalkSpeed = 20.0f;
-	GetCharacterMovement()->BrakingDecelerationWalking = 2000.0f;
-	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
+	// Apply base locomotion values
+	ApplyLocomotionSettings();
 }
 
 void AShadowSlaveCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyLocomotionSettings();
 	InitializeAttributes();
 }
 
 void AShadowSlaveCharacterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Auto-cancel sprint if character has decelerated or stopped moving forward
+	if (CurrentGait == EShadowSlaveGait::Sprint && !CanSprint())
+	{
+		StopSprint();
+	}
+}
+
+void AShadowSlaveCharacterBase::ApplyLocomotionSettings()
+{
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->RotationRate = BaseRotationRate;
+		MoveComp->MaxAcceleration = BaseMaxAcceleration;
+		MoveComp->BrakingDecelerationWalking = BaseBrakingDecelerationWalking;
+		MoveComp->BrakingDecelerationFalling = BaseBrakingDecelerationFalling;
+		MoveComp->FallingLateralFriction = BaseFallingLateralFriction;
+		MoveComp->AirControl = BaseAirControl;
+		MoveComp->AirControlBoostMultiplier = BaseAirControlBoostMultiplier;
+		MoveComp->JumpZVelocity = BaseJumpZVelocity;
+		MoveComp->bUseSeparateBrakingFriction = true;
+		MoveComp->BrakingFrictionFactor = 1.0f;
+
+		UpdateMaxSpeed();
+	}
+}
+
+void AShadowSlaveCharacterBase::UpdateMaxSpeed()
+{
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->MaxWalkSpeed = (CurrentGait == EShadowSlaveGait::Sprint) ? SprintSpeed : WalkSpeed;
+	}
+}
+
+void AShadowSlaveCharacterBase::SetGait(EShadowSlaveGait NewGait)
+{
+	if (CurrentGait == NewGait)
+	{
+		return;
+	}
+
+	const EShadowSlaveGait OldGait = CurrentGait;
+	CurrentGait = NewGait;
+	UpdateMaxSpeed();
+	OnGaitChanged.Broadcast(OldGait, NewGait);
+}
+
+bool AShadowSlaveCharacterBase::CanSprint() const
+{
+	// Must be alive, control enabled, grounded, and actually moving
+	if (!bIsAlive || !bCanMove)
+	{
+		return false;
+	}
+
+	const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	if (!MoveComp || MoveComp->IsFalling())
+	{
+		return false;
+	}
+
+	// Moving forward check (horizontal speed must exceed 50 cm/s)
+	return GetVelocity().SizeSquared2D() > 2500.0f;
+}
+
+void AShadowSlaveCharacterBase::StartSprint()
+{
+	if (CanSprint())
+	{
+		SetGait(EShadowSlaveGait::Sprint);
+	}
+}
+
+void AShadowSlaveCharacterBase::StopSprint()
+{
+	if (CurrentGait == EShadowSlaveGait::Sprint)
+	{
+		SetGait(EShadowSlaveGait::Walk);
+	}
+}
+
+void AShadowSlaveCharacterBase::SetMovementControlEnabled(bool bEnabled)
+{
+	bCanMove = bEnabled;
+	if (!bCanMove)
+	{
+		StopSprint();
+	}
+}
+
+void AShadowSlaveCharacterBase::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	// Stop sprint if character enters falling state
+	if (GetCharacterMovement() && GetCharacterMovement()->IsFalling())
+	{
+		StopSprint();
+	}
 }
 
 void AShadowSlaveCharacterBase::InitializeAttributes()
 {
-	// Foundation hook: Attributes component/values will initialize here in future steps
+	// Modular hook: attributes (health, soul essence) initialize here in future steps
 }
 
 void AShadowSlaveCharacterBase::HandleDeath()
 {
 	bIsAlive = false;
-	GetCharacterMovement()->DisableMovement();
-	// Foundation hook: Death animations, ragdoll, and gameplay event broadcasting will be handled here
+	SetMovementControlEnabled(false);
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->DisableMovement();
+	}
 }

@@ -20,10 +20,24 @@ class SHADOWSLAVE_API AShadowSlavePlayerController : public APlayerController
 public:
 	AShadowSlavePlayerController();
 
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Input")
+	float GetLookSensitivityYaw() const { return LookSensitivityYaw; }
+
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Input")
+	float GetLookSensitivityPitch() const { return LookSensitivityPitch; }
+
 protected:
 	virtual void BeginPlay() override;
 
 	/** Default Input Mapping Context applied on start */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+
+	/** Horizontal look sensitivity multiplier */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float LookSensitivityYaw = 1.0f;
+
+	/** Vertical look sensitivity multiplier */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float LookSensitivityPitch = 1.0f;
 };
