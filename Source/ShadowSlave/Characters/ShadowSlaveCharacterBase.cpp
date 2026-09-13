@@ -4,6 +4,8 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Perception/AIPerceptionSystem.h"
+#include "Perception/AISense_Sight.h"
 
 AShadowSlaveCharacterBase::AShadowSlaveCharacterBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -37,6 +39,9 @@ void AShadowSlaveCharacterBase::BeginPlay()
 
 	ApplyLocomotionSettings();
 	InitializeAttributes();
+
+	// Register character as a sight perception stimulus source
+	UAIPerceptionSystem::RegisterPerceptionStimuliSource(this, UAISense_Sight::StaticClass(), this);
 }
 
 void AShadowSlaveCharacterBase::Tick(float DeltaTime)
@@ -61,6 +66,7 @@ float AShadowSlaveCharacterBase::TakeDamageCustom_Implementation(const FShadowSl
 	CurrentHealth -= ActualDamage;
 
 	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	OnDamaged(DamageInfo);
 
 	if (CurrentHealth <= 0.0f)
 	{
@@ -183,6 +189,11 @@ void AShadowSlaveCharacterBase::OnMovementModeChanged(EMovementMode PrevMovement
 void AShadowSlaveCharacterBase::InitializeAttributes()
 {
 	// Modular hook: attributes (health, soul essence) initialize here in future steps
+}
+
+void AShadowSlaveCharacterBase::OnDamaged(const FShadowSlaveDamageInfo& DamageInfo)
+{
+	OnCharacterDamaged.Broadcast(DamageInfo);
 }
 
 void AShadowSlaveCharacterBase::HandleDeath()

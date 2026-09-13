@@ -190,7 +190,7 @@ void UShadowSlaveCombatComponent::PerformMeleeTrace()
 	for (const FHitResult& HitResult : OutHits)
 	{
 		AActor* HitActor = HitResult.GetActor();
-		if (!HitActor || HitActor == OwningCharacter.Get())
+		if (!HitActor || !CanDamageTarget(HitActor))
 		{
 			continue;
 		}
@@ -263,3 +263,34 @@ void UShadowSlaveCombatComponent::ResetToNeutral()
 		SetCombatState(ECombatState::Neutral);
 	}
 }
+
+bool UShadowSlaveCombatComponent::CanDamageTarget(AActor* TargetActor) const
+{
+	if (!TargetActor || TargetActor == OwningCharacter.Get())
+	{
+		return false;
+	}
+
+	// Don't damage actors that are already dead
+	if (TargetActor->GetClass()->ImplementsInterface(UShadowSlaveDamageableInterface::StaticClass()))
+	{
+		if (!IShadowSlaveDamageableInterface::Execute_IsAlive(TargetActor))
+		{
+			return false;
+		}
+	}
+
+	// Unless friendly fire is explicitly allowed, actors sharing the "Enemy" tag don't damage each other
+	if (!bAllowFriendlyFire && OwningCharacter.IsValid())
+	{
+		const bool bOwnerIsEnemy = OwningCharacter->ActorHasTag(TEXT("Enemy"));
+		const bool bTargetIsEnemy = TargetActor->ActorHasTag(TEXT("Enemy"));
+		if (bOwnerIsEnemy && bTargetIsEnemy)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+

@@ -20,7 +20,9 @@ public class ShadowSlave : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"InputCore",
-				"EnhancedInput"
+				"EnhancedInput",
+				"AIModule",
+				"NavigationSystem"
 			}
 		);
 

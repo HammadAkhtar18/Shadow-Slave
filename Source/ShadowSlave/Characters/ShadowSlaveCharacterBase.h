@@ -12,6 +12,7 @@
 class UShadowSlaveCombatComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacterDamagedSignature, const FShadowSlaveDamageInfo&, DamageInfo);
 
 /**
  * Base character class for all characters in Shadow Slave (player, companions, enemies).
@@ -42,6 +43,10 @@ public:
 	/** Delegate triggered whenever character health changes */
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
 	FOnCharacterHealthChangedSignature OnHealthChanged;
+
+	/** Delegate triggered whenever character receives damage */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
+	FOnCharacterDamagedSignature OnCharacterDamaged;
 
 	/** Returns whether this character is currently alive */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Character")
@@ -104,6 +109,9 @@ protected:
 
 	/** Lifecycle hook for initializing attributes (health, soul essence, etc.) */
 	virtual void InitializeAttributes();
+
+	/** Lifecycle hook triggered when character receives valid damage */
+	virtual void OnDamaged(const FShadowSlaveDamageInfo& DamageInfo);
 
 	/** Lifecycle hook for death handling */
 	virtual void HandleDeath();

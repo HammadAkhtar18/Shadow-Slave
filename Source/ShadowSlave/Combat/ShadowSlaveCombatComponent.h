@@ -60,6 +60,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat")
 	void ResetToNeutral();
 
+	/** Returns true if this combat component can apply damage to the specified target actor */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat")
+	virtual bool CanDamageTarget(AActor* TargetActor) const;
+
+	/** Retrieves the attack data struct for the given attack type */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat")
+	const FShadowSlaveAttackData& GetAttackData(EAttackType AttackType) const;
+
+	/** Sets attack data configuration for light attacks */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat")
+	void SetLightAttackData(const FShadowSlaveAttackData& NewData) { LightAttackData = NewData; }
+
+	/** Sets attack data configuration for heavy attacks */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat")
+	void SetHeavyAttackData(const FShadowSlaveAttackData& NewData) { HeavyAttackData = NewData; }
+
+	/** Returns attack data configuration for light attacks */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat")
+	const FShadowSlaveAttackData& GetLightAttackData() const { return LightAttackData; }
+
+	/** Returns attack data configuration for heavy attacks */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat")
+	const FShadowSlaveAttackData& GetHeavyAttackData() const { return HeavyAttackData; }
+
 	/* --- Delegates --- */
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
@@ -73,9 +97,6 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-
-	/** Retrieves the attack data struct for the given attack type */
-	const FShadowSlaveAttackData& GetAttackData(EAttackType AttackType) const;
 
 	/** Internal handler when recovery duration elapses */
 	void OnRecoveryFinished();
@@ -96,6 +117,10 @@ protected:
 	/** Collision channel used for melee hit detection */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Detection")
 	TEnumAsByte<ECollisionChannel> MeleeTraceChannel = ECC_Pawn;
+
+	/** Whether friendly fire is allowed between actors of the same affiliation */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Detection")
+	bool bAllowFriendlyFire = false;
 
 	/** Enable debug visualization for melee sweep traces */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Debug")
