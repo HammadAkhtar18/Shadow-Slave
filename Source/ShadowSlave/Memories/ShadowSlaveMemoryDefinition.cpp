@@ -4,12 +4,12 @@
 
 EShadowSlaveMemoryRank FShadowSlaveMemoryInstance::GetRank() const
 {
-	return MemoryDefinition ? MemoryDefinition->Rank : EShadowSlaveMemoryRank::Dormant;
+	return MemoryDefinition ? MemoryDefinition->Rank : EShadowSlaveMemoryRank::Unknown;
 }
 
 EShadowSlaveMemoryTier FShadowSlaveMemoryInstance::GetTier() const
 {
-	return MemoryDefinition ? MemoryDefinition->Tier : EShadowSlaveMemoryTier::Tier1;
+	return MemoryDefinition ? MemoryDefinition->Tier : EShadowSlaveMemoryTier::Unknown;
 }
 
 UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
@@ -17,8 +17,8 @@ UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
 	MemoryId = NAME_None;
 	DisplayName = FText::FromString(TEXT("Generic Memory"));
 	Description = FText::FromString(TEXT("A generic Memory prototype definition."));
-	Rank = EShadowSlaveMemoryRank::Dormant;
-	Tier = EShadowSlaveMemoryTier::Tier1;
+	Rank = EShadowSlaveMemoryRank::Unknown;
+	Tier = EShadowSlaveMemoryTier::Unknown;
 	Category = EShadowSlaveMemoryCategory::Miscellaneous;
 	EquipmentSlot = EShadowSlaveEquipmentSlot::None;
 	bRequiresExclusiveSlot = false;
@@ -490,8 +490,8 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 	{
 		Def->DisplayName = FText::FromString(TEXT("Autumn Leaf"));
 		Def->Description = FText::FromString(TEXT("A small leaf-shaped charm purchased in the Sanctuary market to alter hair color (Ch. 388/392). Its rank, tier, and specific enchantment name are unrecorded in canon."));
-		Def->Rank = EShadowSlaveMemoryRank::Dormant; // Default fallback; Rank is canonically UNKNOWN
-		Def->Tier = EShadowSlaveMemoryTier::Tier1;   // Default fallback; Tier is canonically UNKNOWN
+		Def->Rank = EShadowSlaveMemoryRank::Unknown;
+		Def->Tier = EShadowSlaveMemoryTier::Unknown;
 		Def->Category = EShadowSlaveMemoryCategory::Charm;
 		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Charm;
 		Def->bCanBeEquipped = true;
@@ -509,7 +509,7 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 		Def->DisplayName = FText::FromString(TEXT("Siege Souvenir"));
 		Def->Description = FText::FromString(TEXT("A three-meter-long white javelin hand-crafted by Sunny via Weaving in Antarctica (Ch. 1030) from the quill of a Corrupted Devil."));
 		Def->Rank = EShadowSlaveMemoryRank::Transcendent; // Explicitly verified Transcendent in Ch. 1030 text
-		Def->Tier = EShadowSlaveMemoryTier::Tier1;       // Default fallback; Tier is canonically UNKNOWN
+		Def->Tier = EShadowSlaveMemoryTier::Unknown;       // Tier is canonically UNKNOWN (no explicit novel runes recorded)
 		Def->Category = EShadowSlaveMemoryCategory::Weapon;
 		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Weapon;
 		Def->bCanBeEquipped = true;

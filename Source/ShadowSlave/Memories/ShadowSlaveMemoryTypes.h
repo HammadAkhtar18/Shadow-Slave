@@ -16,6 +16,7 @@ class UShadowSlaveMemoryDefinition;
 UENUM(BlueprintType)
 enum class EShadowSlaveMemoryRank : uint8
 {
+	Unknown      UMETA(DisplayName = "Unknown"),
 	Dormant      UMETA(DisplayName = "Dormant"),
 	Awakened     UMETA(DisplayName = "Awakened"),
 	Ascended     UMETA(DisplayName = "Ascended"),
@@ -33,13 +34,14 @@ enum class EShadowSlaveMemoryRank : uint8
 UENUM(BlueprintType)
 enum class EShadowSlaveMemoryTier : uint8
 {
-	Tier1 UMETA(DisplayName = "Tier I"),
-	Tier2 UMETA(DisplayName = "Tier II"),
-	Tier3 UMETA(DisplayName = "Tier III"),
-	Tier4 UMETA(DisplayName = "Tier IV"),
-	Tier5 UMETA(DisplayName = "Tier V"),
-	Tier6 UMETA(DisplayName = "Tier VI"),
-	Tier7 UMETA(DisplayName = "Tier VII")
+	Unknown UMETA(DisplayName = "Unknown"),
+	Tier1   UMETA(DisplayName = "Tier I"),
+	Tier2   UMETA(DisplayName = "Tier II"),
+	Tier3   UMETA(DisplayName = "Tier III"),
+	Tier4   UMETA(DisplayName = "Tier IV"),
+	Tier5   UMETA(DisplayName = "Tier V"),
+	Tier6   UMETA(DisplayName = "Tier VI"),
+	Tier7   UMETA(DisplayName = "Tier VII")
 };
 
 /**

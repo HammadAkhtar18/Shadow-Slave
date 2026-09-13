@@ -46,11 +46,11 @@ public:
 
 	/** Canon Memory Rank (soul rank of the Memory) */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Classification")
-	EShadowSlaveMemoryRank Rank = EShadowSlaveMemoryRank::Dormant;
+	EShadowSlaveMemoryRank Rank = EShadowSlaveMemoryRank::Unknown;
 
 	/** Canon Memory Tier (soul shard/matrix quality; independent of Rank & Enchantments) */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Classification")
-	EShadowSlaveMemoryTier Tier = EShadowSlaveMemoryTier::Tier1;
+	EShadowSlaveMemoryTier Tier = EShadowSlaveMemoryTier::Unknown;
 
 	/** Broad technical functional classification */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Classification")
