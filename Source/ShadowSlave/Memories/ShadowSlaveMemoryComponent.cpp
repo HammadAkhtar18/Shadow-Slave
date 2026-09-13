@@ -9,6 +9,7 @@ UShadowSlaveMemoryComponent::UShadowSlaveMemoryComponent()
 {
 	// Operates event-driven; no tick overhead
 	PrimaryComponentTick.bCanEverTick = false;
+	bEnforceUniqueSlotEquip = false;
 }
 
 bool UShadowSlaveMemoryComponent::AddMemory(UShadowSlaveMemoryDefinition* MemoryDef, FGuid& OutInstanceId)
@@ -105,6 +106,34 @@ bool UShadowSlaveMemoryComponent::RemoveMemoryByDefinition(const UShadowSlaveMem
 	return false;
 }
 
+bool UShadowSlaveMemoryComponent::DestroyMemory(const FGuid& InstanceId)
+{
+	if (!InstanceId.IsValid())
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < Memories.Num(); ++i)
+	{
+		if (Memories[i].InstanceId == InstanceId)
+		{
+			if (Memories[i].bIsEquipped)
+			{
+				UnequipMemory(InstanceId);
+			}
+
+			FShadowSlaveMemoryInstance DestroyedInstance = Memories[i];
+			Memories.RemoveAt(i);
+
+			OnMemoryDestroyed.Broadcast(DestroyedInstance);
+			OnMemoryCollectionChanged.Broadcast();
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool UShadowSlaveMemoryComponent::EquipMemory(const FGuid& InstanceId)
 {
 	if (!InstanceId.IsValid())
@@ -126,9 +155,11 @@ bool UShadowSlaveMemoryComponent::EquipMemory(const FGuid& InstanceId)
 				return false; // Already equipped
 			}
 
-			// If this Memory occupies a distinct non-None equipment slot, unequip any existing occupant of that slot
+			// Check configurable slot conflict policy (component setting OR definition requirement)
+			const bool bCheckExclusivity = bEnforceUniqueSlotEquip || Memories[i].MemoryDefinition->bRequiresExclusiveSlot;
 			const EShadowSlaveEquipmentSlot TargetSlot = Memories[i].MemoryDefinition->EquipmentSlot;
-			if (TargetSlot != EShadowSlaveEquipmentSlot::None)
+
+			if (bCheckExclusivity && TargetSlot != EShadowSlaveEquipmentSlot::None)
 			{
 				for (int32 j = 0; j < Memories.Num(); ++j)
 				{
@@ -218,6 +249,27 @@ bool UShadowSlaveMemoryComponent::SetMemoryState(const FGuid& InstanceId, EShado
 		}
 	}
 
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::GetMemoryState(const FGuid& InstanceId, EShadowSlaveMemoryState& OutState) const
+{
+	if (!InstanceId.IsValid())
+	{
+		OutState = EShadowSlaveMemoryState::Dormant;
+		return false;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.InstanceId == InstanceId)
+		{
+			OutState = Instance.State;
+			return true;
+		}
+	}
+
+	OutState = EShadowSlaveMemoryState::Dormant;
 	return false;
 }
 
@@ -337,6 +389,32 @@ TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesByCat
 	return Filtered;
 }
 
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesByRank(EShadowSlaveMemoryRank Rank) const
+{
+	TArray<FShadowSlaveMemoryInstance> Filtered;
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.MemoryDefinition && Instance.MemoryDefinition->Rank == Rank)
+		{
+			Filtered.Add(Instance);
+		}
+	}
+	return Filtered;
+}
+
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesByTier(EShadowSlaveMemoryTier Tier) const
+{
+	TArray<FShadowSlaveMemoryInstance> Filtered;
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.MemoryDefinition && Instance.MemoryDefinition->Tier == Tier)
+		{
+			Filtered.Add(Instance);
+		}
+	}
+	return Filtered;
+}
+
 TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetEquippedMemories() const
 {
 	TArray<FShadowSlaveMemoryInstance> Equipped;
@@ -350,7 +428,28 @@ TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetEquippedMemor
 	return Equipped;
 }
 
-bool UShadowSlaveMemoryComponent::BridgeToInventory(const FGuid& InstanceId, UShadowSlaveInventoryComponent* TargetInventory, int32& OutRemainder)
+bool UShadowSlaveMemoryComponent::CanConsumeMemory(const FGuid& InstanceId) const
+{
+	FShadowSlaveMemoryInstance FoundInstance;
+	if (FindMemory(InstanceId, FoundInstance) && FoundInstance.MemoryDefinition)
+	{
+		return FoundInstance.MemoryDefinition->CanBeConsumed();
+	}
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::GetMemoryConsumptionEffect(const FGuid& InstanceId, FShadowSlaveMemoryConsumptionEffect& OutEffect) const
+{
+	FShadowSlaveMemoryInstance FoundInstance;
+	if (FindMemory(InstanceId, FoundInstance) && FoundInstance.MemoryDefinition && FoundInstance.MemoryDefinition->CanBeConsumed())
+	{
+		OutEffect = FoundInstance.MemoryDefinition->ConsumptionEffect;
+		return true;
+	}
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::TransferToInventory(const FGuid& InstanceId, UShadowSlaveInventoryComponent* TargetInventory, int32& OutRemainder)
 {
 	OutRemainder = 0;
 	if (!TargetInventory || !InstanceId.IsValid())
@@ -370,7 +469,16 @@ bool UShadowSlaveMemoryComponent::BridgeToInventory(const FGuid& InstanceId, USh
 		return false;
 	}
 
-	return TargetInventory->AddItem(ItemDef, 1, OutRemainder);
+	// Attempt transfer into target inventory
+	const bool bAdded = TargetInventory->AddItem(ItemDef, 1, OutRemainder);
+	if (bAdded && OutRemainder == 0)
+	{
+		// Atomically remove from MemoryComponent to maintain single authoritative ownership
+		RemoveMemory(InstanceId);
+		return true;
+	}
+
+	return false;
 }
 
 void UShadowSlaveMemoryComponent::LogMemoryContents() const
@@ -378,7 +486,7 @@ void UShadowSlaveMemoryComponent::LogMemoryContents() const
 	AActor* OwnerActor = GetOwner();
 	const FString OwnerName = OwnerActor ? OwnerActor->GetName() : TEXT("None");
 
-	UE_LOG(LogShadowSlave, Log, TEXT("[%s] Memory Component (%d memories stored):"), *OwnerName, Memories.Num());
+	UE_LOG(LogShadowSlave, Log, TEXT("[%s] Memory Component (%d memories held):"), *OwnerName, Memories.Num());
 
 	if (Memories.Num() == 0)
 	{
@@ -390,12 +498,18 @@ void UShadowSlaveMemoryComponent::LogMemoryContents() const
 	{
 		const FShadowSlaveMemoryInstance& Instance = Memories[i];
 		const FString MemName = Instance.MemoryDefinition ? Instance.MemoryDefinition->DisplayName.ToString() : TEXT("Invalid");
+		const FString RankStr = Instance.MemoryDefinition ? UEnum::GetValueAsString(Instance.MemoryDefinition->Rank) : TEXT("Unknown");
+		const FString TierStr = Instance.MemoryDefinition ? UEnum::GetValueAsString(Instance.MemoryDefinition->Tier) : TEXT("Unknown");
+		const int32 EnchantmentCount = Instance.MemoryDefinition ? Instance.MemoryDefinition->GetEnchantmentCount() : 0;
 		const FString EquippedStr = Instance.bIsEquipped ? TEXT("Equipped/Summoned") : TEXT("Dormant");
 		const FString StateStr = UEnum::GetValueAsString(Instance.State);
 
-		UE_LOG(LogShadowSlave, Log, TEXT("  Memory [%d]: %s (%s, State: %s, GUID: %s)"),
+		UE_LOG(LogShadowSlave, Log, TEXT("  Memory [%d]: %s [Rank: %s, Tier: %s, Enchantments: %d] (%s, State: %s, GUID: %s)"),
 			i,
 			*MemName,
+			*RankStr,
+			*TierStr,
+			EnchantmentCount,
 			*EquippedStr,
 			*StateStr,
 			*Instance.InstanceId.ToString(EGuidFormats::Short)
