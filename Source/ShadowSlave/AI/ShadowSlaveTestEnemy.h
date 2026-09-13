@@ -23,6 +23,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void InitializeAttributes() override;
 	virtual void HandleDeath() override;
 
 protected:

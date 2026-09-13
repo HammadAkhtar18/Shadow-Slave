@@ -3,6 +3,7 @@
 #include "Characters/ShadowSlavePlayerCharacter.h"
 #include "Core/ShadowSlavePlayerController.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
+#include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -182,3 +183,25 @@ void AShadowSlavePlayerCharacter::HeavyAttack()
 		CombatComponent->ExecuteAttack(EAttackType::Heavy);
 	}
 }
+
+void AShadowSlavePlayerCharacter::InitializeAttributes()
+{
+	Super::InitializeAttributes();
+
+	if (AttributeComponent)
+	{
+		// Prototype player attribute configuration
+		// NOT final canon stats for Sunny (Sunless); temporary baseline values for testing only.
+		FAttributeInitConfig PlayerConfig;
+		PlayerConfig.BaseMaxHealth = 100.0f;
+		PlayerConfig.BaseMaxStamina = 100.0f;
+		PlayerConfig.BaseMaxEssence = 100.0f;
+		PlayerConfig.bEnableStaminaRegen = true;
+		PlayerConfig.StaminaRegenRate = 25.0f;
+		PlayerConfig.StaminaRegenDelay = 1.0f;
+		PlayerConfig.StaminaRegenTickInterval = 0.1f;
+
+		AttributeComponent->InitializeAttributes(PlayerConfig);
+	}
+}
+

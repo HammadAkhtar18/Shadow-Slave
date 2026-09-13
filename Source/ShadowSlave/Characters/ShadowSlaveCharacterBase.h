@@ -10,6 +10,7 @@
 #include "ShadowSlaveCharacterBase.generated.h"
 
 class UShadowSlaveCombatComponent;
+class UShadowSlaveAttributeComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacterDamagedSignature, const FShadowSlaveDamageInfo&, DamageInfo);
@@ -50,7 +51,7 @@ public:
 
 	/** Returns whether this character is currently alive */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Character")
-	virtual bool IsAlive() const { return bIsAlive; }
+	virtual bool IsAlive() const;
 
 	/** Returns current gait mode */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Locomotion")
@@ -90,11 +91,15 @@ public:
 
 	/** Returns current health */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
-	float GetCurrentHealth() const { return CurrentHealth; }
+	float GetCurrentHealth() const;
 
 	/** Returns maximum health */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
-	float GetMaxHealth() const { return MaxHealth; }
+	float GetMaxHealth() const;
+
+	/** Returns the modular attribute component */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
+	UShadowSlaveAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -121,16 +126,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveCombatComponent> CombatComponent;
 
+	/** Modular Attribute Component managing health, stamina, and essence */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveAttributeComponent> AttributeComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Character")
 	bool bIsAlive = true;
 
-	/** Maximum health points */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes", meta = (ClampMin = "1.0"))
-	float MaxHealth = 100.0f;
-
-	/** Current health points */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes")
-	float CurrentHealth = 100.0f;
+	/** Callback when attribute component broadcasts health changes */
+	UFUNCTION()
+	virtual void HandleAttributeHealthChanged(float NewHealth, float MaxHealth);
 
 	/** Controls whether movement input is accepted */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Locomotion")

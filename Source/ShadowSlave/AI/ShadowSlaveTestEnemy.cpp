@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "AI/ShadowSlaveTestEnemy.h"
+#include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -11,8 +12,6 @@ AShadowSlaveTestEnemy::AShadowSlaveTestEnemy(const FObjectInitializer& ObjectIni
 	: Super(ObjectInitializer)
 {
 	// Default prototype test enemy stats
-	MaxHealth = 80.0f;
-	CurrentHealth = 80.0f;
 	AttackDamage = 15.0f;
 	AttackRange = 160.0f;
 	AttackAcceptanceRadius = 120.0f;
@@ -53,6 +52,24 @@ void AShadowSlaveTestEnemy::BeginPlay()
 		{
 			PlaceholderMesh->SetVisibility(true);
 		}
+	}
+}
+
+void AShadowSlaveTestEnemy::InitializeAttributes()
+{
+	Super::InitializeAttributes();
+
+	if (AttributeComponent)
+	{
+		// Prototype test enemy attributes:
+		// Generic non-canon values for AI verification.
+		FAttributeInitConfig EnemyConfig;
+		EnemyConfig.BaseMaxHealth = 80.0f;
+		EnemyConfig.BaseMaxStamina = 50.0f;
+		EnemyConfig.BaseMaxEssence = 0.0f; // Generic test enemy does not use essence
+		EnemyConfig.bEnableStaminaRegen = false;
+
+		AttributeComponent->InitializeAttributes(EnemyConfig);
 	}
 }
 

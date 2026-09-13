@@ -94,6 +94,8 @@ public:
 	AShadowSlavePlayerCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 protected:
+	virtual void InitializeAttributes() override;
+
 	/** Camera-relative movement input handler */
 	void Move(const FInputActionValue& Value);
 

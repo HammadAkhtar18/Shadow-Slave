@@ -2,6 +2,7 @@
 
 #include "Characters/ShadowSlaveCharacterBase.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
+#include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionSystem.h"
@@ -28,17 +29,25 @@ AShadowSlaveCharacterBase::AShadowSlaveCharacterBase(const FObjectInitializer& O
 
 	// Create modular combat component
 	CombatComponent = CreateDefaultSubobject<UShadowSlaveCombatComponent>(TEXT("CombatComponent"));
+
+	// Create modular attribute component
+	AttributeComponent = CreateDefaultSubobject<UShadowSlaveAttributeComponent>(TEXT("AttributeComponent"));
 }
 
 void AShadowSlaveCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CurrentHealth = MaxHealth;
 	bIsAlive = true;
 
 	ApplyLocomotionSettings();
 	InitializeAttributes();
+
+	if (AttributeComponent)
+	{
+		AttributeComponent->OnHealthChanged.AddDynamic(this, &AShadowSlaveCharacterBase::HandleAttributeHealthChanged);
+		AttributeComponent->OnDeath.AddDynamic(this, &AShadowSlaveCharacterBase::HandleDeath);
+	}
 
 	// Register character as a sight perception stimulus source
 	UAIPerceptionSystem::RegisterPerceptionStimuliSource(this, UAISense_Sight::StaticClass(), this);
@@ -57,23 +66,43 @@ void AShadowSlaveCharacterBase::Tick(float DeltaTime)
 
 float AShadowSlaveCharacterBase::TakeDamageCustom_Implementation(const FShadowSlaveDamageInfo& DamageInfo)
 {
-	if (!bIsAlive)
+	if (!IsAlive())
 	{
 		return 0.0f;
 	}
 
-	const float ActualDamage = FMath::Clamp(DamageInfo.DamageAmount, 0.0f, CurrentHealth);
-	CurrentHealth -= ActualDamage;
-
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
-	OnDamaged(DamageInfo);
-
-	if (CurrentHealth <= 0.0f)
+	float ActualDamage = 0.0f;
+	if (AttributeComponent)
 	{
-		HandleDeath();
+		ActualDamage = AttributeComponent->ApplyDamage(DamageInfo.DamageAmount, DamageInfo);
+	}
+
+	if (ActualDamage > 0.0f)
+	{
+		OnDamaged(DamageInfo);
 	}
 
 	return ActualDamage;
+}
+
+void AShadowSlaveCharacterBase::HandleAttributeHealthChanged(float NewHealth, float MaxHealth)
+{
+	OnHealthChanged.Broadcast(NewHealth, MaxHealth);
+}
+
+bool AShadowSlaveCharacterBase::IsAlive() const
+{
+	return AttributeComponent ? AttributeComponent->IsAlive() : bIsAlive;
+}
+
+float AShadowSlaveCharacterBase::GetCurrentHealth() const
+{
+	return AttributeComponent ? AttributeComponent->GetCurrentHealth() : 0.0f;
+}
+
+float AShadowSlaveCharacterBase::GetMaxHealth() const
+{
+	return AttributeComponent ? AttributeComponent->GetMaximumHealth() : 0.0f;
 }
 
 float AShadowSlaveCharacterBase::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser)
@@ -129,7 +158,13 @@ void AShadowSlaveCharacterBase::SetGait(EShadowSlaveGait NewGait)
 bool AShadowSlaveCharacterBase::CanSprint() const
 {
 	// Must be alive, control enabled, grounded, and actually moving
-	if (!bIsAlive || !bCanMove)
+	if (!IsAlive() || !bCanMove)
+	{
+		return false;
+	}
+
+	// Must have stamina available if attribute component is attached
+	if (AttributeComponent && AttributeComponent->GetCurrentStamina() <= 0.0f)
 	{
 		return false;
 	}
@@ -199,7 +234,6 @@ void AShadowSlaveCharacterBase::OnDamaged(const FShadowSlaveDamageInfo& DamageIn
 void AShadowSlaveCharacterBase::HandleDeath()
 {
 	bIsAlive = false;
-	CurrentHealth = 0.0f;
 	SetMovementControlEnabled(false);
 
 	if (CombatComponent)

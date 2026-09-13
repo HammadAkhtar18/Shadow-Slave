@@ -9,6 +9,7 @@
 
 class UCapsuleComponent;
 class UStaticMeshComponent;
+class UShadowSlaveAttributeComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDummyHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDummyDiedSignature);
@@ -27,14 +28,18 @@ public:
 
 	/* --- IShadowSlaveDamageableInterface --- */
 	virtual float TakeDamageCustom_Implementation(const FShadowSlaveDamageInfo& DamageInfo) override;
-	virtual bool IsAlive_Implementation() const override { return bIsAlive; }
+	virtual bool IsAlive_Implementation() const override;
 
 	// Standard engine damage handling
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
 	/** Returns current health percentage (0.0 - 1.0) */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dummy")
-	float GetHealthPercent() const { return (MaxHealth > 0.0f) ? (CurrentHealth / MaxHealth) : 0.0f; }
+	float GetHealthPercent() const;
+
+	/** Returns AttributeComponent */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dummy")
+	UShadowSlaveAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat|Dummy")
 	FOnDummyHealthChangedSignature OnHealthChanged;
@@ -48,6 +53,10 @@ protected:
 	/** Handles death transition */
 	virtual void HandleDeath();
 
+	/** Callback when attribute component broadcasts health changes */
+	UFUNCTION()
+	virtual void HandleAttributeHealthChanged(float NewHealth, float InMaxHealth);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dummy")
 	TObjectPtr<UCapsuleComponent> CapsuleComponent;
@@ -55,11 +64,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dummy")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dummy", meta = (ClampMin = "1.0"))
-	float MaxHealth = 100.0f;
-
+	/** Modular Attribute Component managing health */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dummy")
-	float CurrentHealth = 100.0f;
+	TObjectPtr<UShadowSlaveAttributeComponent> AttributeComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dummy")
 	bool bIsAlive = true;
