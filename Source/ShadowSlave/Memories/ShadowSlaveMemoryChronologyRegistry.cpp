@@ -148,7 +148,7 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Entry.OwnershipEndEvent = FText::FromString(TEXT("Retired to Soul Sea reserve upon acquiring Mantle of the Underworld (Ch. 455)"));
 		Entry.bIsRetainedAtArcEnd = true;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 20-22, 100+. Awakened Tier I armor ([Featherlight], [Undying], [Inconspicuous]). Primary armor through Forgotten Shore."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 20-22, 100+. Awakened Tier I armor ([Featherlight], [Undying]). Primary armor through Forgotten Shore."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
@@ -167,7 +167,7 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Entry.OwnershipEndEvent = FText::GetEmpty();
 		Entry.bIsRetainedAtArcEnd = true;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 19-23, 60+. Awakened Tier I charm ([Clear Chime], [Attention/Lure]). Vital acoustic decoy used across all volumes."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 19-23, 60+. Awakened Tier I charm ([Clear Chime]). Vital acoustic decoy used across all volumes."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
@@ -183,14 +183,33 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Entry.SourceDetails = FText::FromString(TEXT("Awakened Demon: Centurion of the Carapace"));
 		Entry.AcquisitionEvent = FText::FromString(TEXT("Slaying the Carapace Centurion in the labyrinth"));
 		Entry.OwnershipStartEvent = FText::FromString(TEXT("Acquired from Centurion drop"));
-		Entry.OwnershipEndEvent = FText::FromString(TEXT("Shattered against Caster's Broken Oath in the duel (Ch. 336); reforged into Moonlight Shard (Ch. 435)"));
+		Entry.OwnershipEndEvent = FText::FromString(TEXT("Shattered against Caster's Broken Oath in the duel (Ch. 336)"));
 		Entry.bIsRetainedAtArcEnd = false;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 41, 335-338. Awakened Tier II tachi ([Unbroken], [Weight of Midnight], [Hone]). Primary Forgotten Shore melee weapon."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 41, 335-338. Awakened Tier III sword ([Unbroken]). Primary Forgotten Shore melee weapon; destroyed in battle against Caster."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 4. Extraordinary Rock (Forgotten Shore)
+	// 4. Moonlight Shard (Forgotten Shore)
+	{
+		FShadowSlaveMemoryChronologyEntry Entry;
+		Entry.EntryId = FName(TEXT("Entry_MoonlightShard"));
+		Entry.MemoryDefinition = UShadowSlaveMemoryDefinition::CreateCanonMemoryDefinition(FName(TEXT("MoonlightShard")), Registry);
+		Entry.TargetCharacterId = FName(TEXT("Sunless"));
+		Entry.StoryArc = EShadowSlaveStoryArc::ForgottenShore;
+		Entry.ApproximateChapter = 324;
+		Entry.AcquisitionSource = EShadowSlaveMemoryAcquisitionSource::Character;
+		Entry.SourceDetails = FText::FromString(TEXT("Gift from Cassie in the Bright Castle"));
+		Entry.AcquisitionEvent = FText::FromString(TEXT("Received privately from Cassie before departing on the expedition toward the Crimson Spire"));
+		Entry.OwnershipStartEvent = FText::FromString(TEXT("Gifted by Cassie (Ch. 322-326)"));
+		Entry.OwnershipEndEvent = FText::GetEmpty();
+		Entry.bIsRetainedAtArcEnd = true;
+		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 322-326, 336-337. Ascended Tier I glass dagger ([Unseen]). Delivered the fatal invisible strike against Caster."));
+		Registry->ChronologyEntries.Add(Entry);
+	}
+
+	// 5. Extraordinary Rock (Forgotten Shore)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_ExtraordinaryRock"));
@@ -208,7 +227,7 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 5. Dark Wing (Forgotten Shore)
+	// 6. Dark Wing (Forgotten Shore)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_DarkWing"));
@@ -226,26 +245,26 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 6. Weaver's Mask (Forgotten Shore)
+	// 7. Weaver's Mask (Forgotten Shore)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_WeaversMask"));
 		Entry.MemoryDefinition = UShadowSlaveMemoryDefinition::CreateCanonMemoryDefinition(FName(TEXT("WeaversMask")), Registry);
 		Entry.TargetCharacterId = FName(TEXT("Sunless"));
 		Entry.StoryArc = EShadowSlaveStoryArc::ForgottenShore;
-		Entry.ApproximateChapter = 170;
+		Entry.ApproximateChapter = 276;
 		Entry.AcquisitionSource = EShadowSlaveMemoryAcquisitionSource::StoryEvent;
-		Entry.SourceDetails = FText::FromString(TEXT("Daemon of Fate (Weaver) Sunken Temple Relic"));
-		Entry.AcquisitionEvent = FText::FromString(TEXT("Recovered from the pedestal before the headless statue of Weaver"));
-		Entry.OwnershipStartEvent = FText::FromString(TEXT("Claimed from the altar of Weaver"));
+		Entry.SourceDetails = FText::FromString(TEXT("Daemon of Fate (Weaver) Subterranean Cathedral Sanctuary"));
+		Entry.AcquisitionEvent = FText::FromString(TEXT("Taken from the headless statue of Weaver in the hidden underground sanctum beneath the Dark City Cathedral"));
+		Entry.OwnershipStartEvent = FText::FromString(TEXT("Claimed from the headless statue of Weaver (Ch. 276-278)"));
 		Entry.OwnershipEndEvent = FText::GetEmpty();
 		Entry.bIsRetainedAtArcEnd = true;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 168-170+. Divine Tier VII relic ([Simple Trick], [Where is My Eye?], [Unknowable]). Foundations of Mongrel and Weaving."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 276-278, 300+. Divine Tier VII tool ([Simple Trick], [Where is my eye?], [Mantle of Lies]). Inverts Flaw, reveals destiny/essence strings, conceals identity and true name."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 7. Cruel Sight (Forgotten Shore)
+	// 8. Cruel Sight (Forgotten Shore)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_CruelSight"));
@@ -260,11 +279,11 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Entry.OwnershipEndEvent = FText::GetEmpty();
 		Entry.bIsRetainedAtArcEnd = true;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 255-260, 450+, 860+. Ascended Tier VI spear ([Ghost Blade], [Somber Gleam], [Marrow Chill]). Primary anti-titan weapon; upgraded via Weaving."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 255-260, 450+, 860+. Ascended Tier VI spear ([Ghost Blade]). Primary anti-titan weapon; upgraded via Weaving."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 8. Covetous Coffer (Chained Isles)
+	// 9. Covetous Coffer (Chained Isles)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_CovetousCoffer"));
@@ -282,25 +301,45 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 9. Mantle of the Underworld (Chained Isles)
+	// 10. Mantle of the Underworld (Chained Isles)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_MantleOfTheUnderworld"));
+		Entry.MemoryDefinition = UShadowSlaveMemoryDefinition::CreateCanonMemoryDefinition(FName(TEXT("MantleOfTheUnderworld")), Registry);
 		Entry.TargetCharacterId = FName(TEXT("Sunless"));
 		Entry.StoryArc = EShadowSlaveStoryArc::ChainedIsles;
 		Entry.ApproximateChapter = 455;
 		Entry.AcquisitionSource = EShadowSlaveMemoryAcquisitionSource::StoryEvent;
 		Entry.SourceDetails = FText::FromString(TEXT("Nether (Daemon of Choice, Prince of the Underworld) Forge"));
 		Entry.AcquisitionEvent = FText::FromString(TEXT("Recovered from the crypt and forge of Prince Nether in the Chained Isles"));
-		Entry.OwnershipStartEvent = FText::FromString(TEXT("Claimed from Nether's forge"));
-		Entry.OwnershipEndEvent = FText::GetEmpty();
+		Entry.OwnershipStartEvent = FText::FromString(TEXT("Claimed from Nether's forge (Ch. 452-458)"));
+		Entry.OwnershipEndEvent = FText::FromString(TEXT("Shattered against Corrupted Titan Goliath in Antarctica (Ch. 1028-1035); [Soulbound Relic] triggers and permanently transforms its matrix into the physical Attribute [Marble Shell]"));
 		Entry.bIsRetainedAtArcEnd = true;
 		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
-		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 452-458, 800+. Ascended Tier IV evolving stone plate ([Prince of the Underworld], [Feather of Stone], [Living Stone])."));
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 452-458, 800-1035. Ascended Tier IV stone armor ([Living Stone], [Feather of Truth], [Stalwart], [Underworld Armament], [Prince of the Underworld], [Soulbound Relic]). Bound as Marble Shell."));
 		Registry->ChronologyEntries.Add(Entry);
 	}
 
-	// 10. Siege Souvenir (Antarctica Campaign)
+	// 11. Sin of Solace (Chained Isles / Second Nightmare)
+	{
+		FShadowSlaveMemoryChronologyEntry Entry;
+		Entry.EntryId = FName(TEXT("Entry_SinOfSolace"));
+		Entry.MemoryDefinition = UShadowSlaveMemoryDefinition::CreateCanonMemoryDefinition(FName(TEXT("SinOfSolace")), Registry);
+		Entry.TargetCharacterId = FName(TEXT("Sunless"));
+		Entry.StoryArc = EShadowSlaveStoryArc::ChainedIsles;
+		Entry.ApproximateChapter = 755;
+		Entry.AcquisitionSource = EShadowSlaveMemoryAcquisitionSource::StoryEvent;
+		Entry.SourceDetails = FText::FromString(TEXT("Dread Pagoda Altar (Second Nightmare)"));
+		Entry.AcquisitionEvent = FText::FromString(TEXT("Retrieved from the stone altar within the Dread Pagoda floating above the Crushed Island"));
+		Entry.OwnershipStartEvent = FText::FromString(TEXT("Drawn from the Pagoda altar (Ch. 754-756)"));
+		Entry.OwnershipEndEvent = FText::FromString(TEXT("Lost at the Estuary in Chapter 1588 when Sunny severed his ties with the Spell and became Fateless"));
+		Entry.bIsRetainedAtArcEnd = true;
+		Entry.CanonConfidence = EShadowSlaveCanonConfidence::Verified;
+		Entry.VerificationNotes = FText::FromString(TEXT("Chapters 754-756, 1200+, 1588. Transcendent Tier IV jade jian ([Soul Cleave], [Curse of Solace]). Cuts soul and physical body; spawns sadistic psychic hallucinations."));
+		Registry->ChronologyEntries.Add(Entry);
+	}
+
+	// 12. Siege Souvenir (Antarctica Campaign)
 	{
 		FShadowSlaveMemoryChronologyEntry Entry;
 		Entry.EntryId = FName(TEXT("Entry_SiegeSouvenir"));

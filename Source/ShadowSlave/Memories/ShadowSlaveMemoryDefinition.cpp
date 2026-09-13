@@ -109,12 +109,6 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 			FText::FromString(TEXT("Provides formidable protection against cuts and piercing trauma, slowly mending tears and gashes over time.")),
 			0.0f
 		));
-		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_Inconspicuous")),
-			FText::FromString(TEXT("Inconspicuous")),
-			FText::FromString(TEXT("Dampens the wearer's presence, making them appear completely ordinary and non-threatening.")),
-			0.0f
-		));
 	}
 	else if (CanonMemoryId == FName(TEXT("SilverBell")))
 	{
@@ -131,22 +125,16 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
 			FName(TEXT("Enchantment_ClearChime")),
 			FText::FromString(TEXT("Clear Chime")),
-			FText::FromString(TEXT("Emits an extraordinarily pure ringing tone that effortlessly pierces ambient noise, weather, and distance.")),
-			0.0f
-		));
-		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_Attention")),
-			FText::FromString(TEXT("Attention")),
-			FText::FromString(TEXT("Draws the auditory curiosity and tracking focus of nearby creatures toward the sound source.")),
+			FText::FromString(TEXT("Emits an extraordinarily pure ringing tone that effortlessly pierces ambient noise, weather, and distance, instinctively drawing the attention of nearby creatures.")),
 			0.0f
 		));
 	}
 	else if (CanonMemoryId == FName(TEXT("MidnightShard")))
 	{
 		Def->DisplayName = FText::FromString(TEXT("Midnight Shard"));
-		Def->Description = FText::FromString(TEXT("An elegant, slender curved sword forged from pitch-black metal that absorbs light rather than reflecting it."));
+		Def->Description = FText::FromString(TEXT("An elegant, slender curved sword forged from pitch-black metal that absorbs light rather than reflecting it. Dropped by an Awakened Demon."));
 		Def->Rank = EShadowSlaveMemoryRank::Awakened;
-		Def->Tier = EShadowSlaveMemoryTier::Tier2;
+		Def->Tier = EShadowSlaveMemoryTier::Tier3;
 		Def->Category = EShadowSlaveMemoryCategory::Weapon;
 		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Weapon;
 		Def->bCanBeEquipped = true;
@@ -155,26 +143,32 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
 			FName(TEXT("Enchantment_Unbroken")),
 			FText::FromString(TEXT("Unbroken")),
-			FText::FromString(TEXT("Endowed with extreme tensile resilience; resists shattering against heavy impacts from Awakened-rank foes.")),
+			FText::FromString(TEXT("Endowed with extreme tensile resilience; resists shattering against heavy impacts from Awakened-rank foes. Possesses no inherent magical sharpness.")),
 			0.0f
 		));
+	}
+	else if (CanonMemoryId == FName(TEXT("MoonlightShard")))
+	{
+		Def->DisplayName = FText::FromString(TEXT("Moonlight Shard"));
+		Def->Description = FText::FromString(TEXT("A slender stiletto-like dagger sculpted from translucent, luminous crystalline glass. Gifted to Sunny by Cassie in the Bright Castle."));
+		Def->Rank = EShadowSlaveMemoryRank::Ascended;
+		Def->Tier = EShadowSlaveMemoryTier::Tier1;
+		Def->Category = EShadowSlaveMemoryCategory::Weapon;
+		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Weapon;
+		Def->bCanBeEquipped = true;
+		Def->bRequiresExclusiveSlot = false;
+
 		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_WeightOfMidnight")),
-			FText::FromString(TEXT("Weight of Midnight")),
-			FText::FromString(TEXT("Delivers crushing kinetic momentum upon impact while feeling nimble and light in hand.")),
-			0.0f
-		));
-		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_Hone")),
-			FText::FromString(TEXT("Hone")),
-			FText::FromString(TEXT("Maintains a razor edge capable of slicing through tough monster carapaces.")),
+			FName(TEXT("Enchantment_Unseen")),
+			FText::FromString(TEXT("Unseen")),
+			FText::FromString(TEXT("When summoned, the weapon turns completely invisible, concealing its reach, edge, and strike trajectory from ordinary sight.")),
 			0.0f
 		));
 	}
 	else if (CanonMemoryId == FName(TEXT("CruelSight")))
 	{
 		Def->DisplayName = FText::FromString(TEXT("Cruel Sight"));
-		Def->Description = FText::FromString(TEXT("A somber spear with an obsidian-like shaft and a translucent leaf blade glowing with a pale, ghostly light."));
+		Def->Description = FText::FromString(TEXT("A somber spear with an obsidian-like shaft and a translucent leaf blade glowing with a pale, ghostly light. Retrieved from the subterranean cathedral altar."));
 		Def->Rank = EShadowSlaveMemoryRank::Ascended;
 		Def->Tier = EShadowSlaveMemoryTier::Tier6;
 		Def->Category = EShadowSlaveMemoryCategory::Weapon;
@@ -187,30 +181,18 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
 			FName(TEXT("Enchantment_GhostBlade")),
 			FText::FromString(TEXT("Ghost Blade")),
-			FText::FromString(TEXT("The spearhead phases intangibly through physical armor and shields to materialize directly inside vital organs.")),
-			0.0f
-		));
-		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_SomberGleam")),
-			FText::FromString(TEXT("Somber Gleam")),
-			FText::FromString(TEXT("Projects an eerie pale luminescence that pierces deep darkness and disrupts optical illusions.")),
-			0.0f
-		));
-		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_MarrowChill")),
-			FText::FromString(TEXT("Marrow Chill")),
-			FText::FromString(TEXT("Inflicts numbing cold and necrotic paralysis into victim essence channels upon puncture.")),
+			FText::FromString(TEXT("The spearhead phases intangibly through physical armor and shields to materialize directly inside vital organs and soul structures.")),
 			0.0f
 		));
 	}
 	else if (CanonMemoryId == FName(TEXT("WeaversMask")))
 	{
 		Def->DisplayName = FText::FromString(TEXT("Weaver's Mask"));
-		Def->Description = FText::FromString(TEXT("A smooth, faceless mask carved from abyssal black wood adorned with subtle carved web filigree. An ancient divine relic of the Daemon of Fate."));
+		Def->Description = FText::FromString(TEXT("A smooth, faceless mask carved from abyssal black wood adorned with subtle carved web filigree. An ancient divine tool of Weaver, Daemon of Fate."));
 		Def->Rank = EShadowSlaveMemoryRank::Divine;
 		Def->Tier = EShadowSlaveMemoryTier::Tier7;
-		Def->Category = EShadowSlaveMemoryCategory::Relic;
-		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Relic;
+		Def->Category = EShadowSlaveMemoryCategory::Tool;
+		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::None;
 		Def->bCanBeEquipped = true;
 		Def->bRequiresExclusiveSlot = false;
 
@@ -227,9 +209,81 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 			0.0f
 		));
 		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
-			FName(TEXT("Enchantment_Unknowable")),
-			FText::FromString(TEXT("Unknowable")),
-			FText::FromString(TEXT("Completely conceals the wearer's identity, true name, and presence from all appraisal abilities and divination.")),
+			FName(TEXT("Enchantment_MantleOfLies")),
+			FText::FromString(TEXT("Mantle of Lies")),
+			FText::FromString(TEXT("Completely conceals the wearer's identity, true name, runes, and presence from all appraisal abilities and divination.")),
+			0.0f
+		));
+	}
+	else if (CanonMemoryId == FName(TEXT("MantleOfTheUnderworld")))
+	{
+		Def->DisplayName = FText::FromString(TEXT("Mantle of the Underworld"));
+		Def->Description = FText::FromString(TEXT("A magnificent suit of full plate armor carved from living black stone paired with a mantle resembling petrified liquid shadow. Forged by Prince Nether, Daemon of Choice."));
+		Def->Rank = EShadowSlaveMemoryRank::Ascended;
+		Def->Tier = EShadowSlaveMemoryTier::Tier4;
+		Def->Category = EShadowSlaveMemoryCategory::Armor;
+		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Armor;
+		Def->bCanBeEquipped = true;
+		Def->bRequiresExclusiveSlot = true;
+
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_LivingStone")),
+			FText::FromString(TEXT("Living Stone")),
+			FText::FromString(TEXT("The stone armor adjusts smoothly to the wearer's anatomy, causes zero physical encumbrance, and slowly mends fractures from essence.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_FeatherOfTruth")),
+			FText::FromString(TEXT("Feather of Truth")),
+			FText::FromString(TEXT("Enables dynamic mass and weight manipulation: weightless as a feather for extreme speed, or heavy as a mountain to resist knockback.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_Stalwart")),
+			FText::FromString(TEXT("Stalwart")),
+			FText::FromString(TEXT("Endows the armor with supreme defensive resilience against physical, piercing, and elemental trauma.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_UnderworldArmament")),
+			FText::FromString(TEXT("Underworld Armament")),
+			FText::FromString(TEXT("Daemon-forged evolving kill counter. Slaying enemies of comparable or higher rank reinforces the armor's matrix.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_PrinceOfTheUnderworld")),
+			FText::FromString(TEXT("Prince of the Underworld")),
+			FText::FromString(TEXT("Radiates an aura of demonic majesty, instilling dread in enemies and granting significant resistance to mind attacks.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_SoulboundRelic")),
+			FText::FromString(TEXT("Soulbound Relic")),
+			FText::FromString(TEXT("If the armor suffers catastrophic destruction, its living stone matrix dissolves into the soul and flesh of its master, manifesting as a permanent attribute.")),
+			0.0f
+		));
+	}
+	else if (CanonMemoryId == FName(TEXT("SinOfSolace")))
+	{
+		Def->DisplayName = FText::FromString(TEXT("Sin of Solace"));
+		Def->Description = FText::FromString(TEXT("An elegant double-edged straight sword (jian) carved from polished, translucent white-green jade. Found atop the Dread Pagoda in the Second Nightmare."));
+		Def->Rank = EShadowSlaveMemoryRank::Transcendent;
+		Def->Tier = EShadowSlaveMemoryTier::Tier4;
+		Def->Category = EShadowSlaveMemoryCategory::Weapon;
+		Def->EquipmentSlot = EShadowSlaveEquipmentSlot::Weapon;
+		Def->bCanBeEquipped = true;
+		Def->bRequiresExclusiveSlot = true;
+
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_SoulCleave")),
+			FText::FromString(TEXT("Soul Cleave")),
+			FText::FromString(TEXT("Slices with equal lethality through physical armor and ethereal soul essence channels.")),
+			0.0f
+		));
+		Def->Enchantments.Add(FShadowSlaveMemoryEnchantment(
+			FName(TEXT("Enchantment_CurseOfSolace")),
+			FText::FromString(TEXT("Curse of Solace")),
+			FText::FromString(TEXT("Virulent psychic curse manifesting a persistent sadistic phantom clone of the wielder that relentlessly mocks and destabilizes their psyche.")),
 			0.0f
 		));
 	}
