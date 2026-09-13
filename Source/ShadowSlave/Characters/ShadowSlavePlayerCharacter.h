@@ -12,6 +12,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 class UShadowSlaveInventoryComponent;
+class UShadowSlaveMemoryComponent;
 
 /**
  * Player-controlled character class for Shadow Slave (Sunless foundation).
@@ -34,6 +35,10 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	/** Modular inventory component managing player slots, stacking, and capacity */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveInventoryComponent> InventoryComponent;
+
+	/** Modular memory component managing player Memories, manifestation, and equipment */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Memories", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveMemoryComponent> MemoryComponent;
 
 	/* --- Camera Tunables --- */
 
@@ -137,4 +142,7 @@ public:
 
 	/** Returns InventoryComponent subobject **/
 	FORCEINLINE UShadowSlaveInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	/** Returns MemoryComponent subobject **/
+	FORCEINLINE UShadowSlaveMemoryComponent* GetMemoryComponent() const { return MemoryComponent; }
 };

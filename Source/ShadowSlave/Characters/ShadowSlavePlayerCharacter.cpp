@@ -5,6 +5,7 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Items/ShadowSlaveInventoryComponent.h"
+#include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -40,6 +41,9 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 
 	// Create modular inventory component
 	InventoryComponent = CreateDefaultSubobject<UShadowSlaveInventoryComponent>(TEXT("InventoryComponent"));
+
+	// Create modular memory component
+	MemoryComponent = CreateDefaultSubobject<UShadowSlaveMemoryComponent>(TEXT("MemoryComponent"));
 }
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
