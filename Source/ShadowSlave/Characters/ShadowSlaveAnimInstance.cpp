@@ -2,6 +2,7 @@
 
 #include "Characters/ShadowSlaveAnimInstance.h"
 #include "Characters/ShadowSlaveCharacterBase.h"
+#include "Combat/ShadowSlaveCombatComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 UShadowSlaveAnimInstance::UShadowSlaveAnimInstance()
@@ -82,6 +83,15 @@ void UShadowSlaveAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// Extract extensible lifecycle and control state
 	bIsAlive = Character->IsAlive();
 	bIsMovementControlEnabled = Character->IsMovementControlEnabled();
+
+	if (UShadowSlaveCombatComponent* CombatComp = Character->GetCombatComponent())
+	{
+		CurrentCombatState = CombatComp->GetCombatState();
+	}
+	else
+	{
+		CurrentCombatState = ECombatState::Neutral;
+	}
 }
 
 void UShadowSlaveAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)

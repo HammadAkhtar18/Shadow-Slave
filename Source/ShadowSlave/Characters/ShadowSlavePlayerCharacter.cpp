@@ -2,6 +2,7 @@
 
 #include "Characters/ShadowSlavePlayerCharacter.h"
 #include "Core/ShadowSlavePlayerController.h"
+#include "Combat/ShadowSlaveCombatComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -78,6 +79,18 @@ void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* Pla
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::SprintStarted);
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &AShadowSlavePlayerCharacter::SprintStopped);
 		}
+
+		// Light Attack
+		if (LightAttackAction)
+		{
+			EnhancedInputComponent->BindAction(LightAttackAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::LightAttack);
+		}
+
+		// Heavy Attack
+		if (HeavyAttackAction)
+		{
+			EnhancedInputComponent->BindAction(HeavyAttackAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::HeavyAttack);
+		}
 	}
 	else
 	{
@@ -152,4 +165,20 @@ void AShadowSlavePlayerCharacter::SprintStarted()
 void AShadowSlavePlayerCharacter::SprintStopped()
 {
 	StopSprint();
+}
+
+void AShadowSlavePlayerCharacter::LightAttack()
+{
+	if (bCanMove && CombatComponent)
+	{
+		CombatComponent->ExecuteAttack(EAttackType::Light);
+	}
+}
+
+void AShadowSlavePlayerCharacter::HeavyAttack()
+{
+	if (bCanMove && CombatComponent)
+	{
+		CombatComponent->ExecuteAttack(EAttackType::Heavy);
+	}
 }

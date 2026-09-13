@@ -14,7 +14,8 @@ class UInputAction;
 
 /**
  * Player-controlled character class for Shadow Slave (Sunless foundation).
- * Manages collision-aware lagged third-person camera setup and camera-relative Enhanced Input bindings.
+ * Manages collision-aware lagged third-person camera setup, camera-relative movement,
+ * and Enhanced Input routing to locomotion and modular combat systems.
  */
 UCLASS()
 class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacterBase
@@ -81,6 +82,14 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* SprintAction;
 
+	/** Light Attack Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* LightAttackAction;
+
+	/** Heavy Attack Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* HeavyAttackAction;
+
 public:
 	AShadowSlavePlayerCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
@@ -102,6 +111,12 @@ protected:
 
 	/** Sprint release handler */
 	void SprintStopped();
+
+	/** Light attack input handler */
+	void LightAttack();
+
+	/** Heavy attack input handler */
+	void HeavyAttack();
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;

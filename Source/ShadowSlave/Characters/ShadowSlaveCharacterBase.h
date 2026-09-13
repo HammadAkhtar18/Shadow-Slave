@@ -5,14 +5,21 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Characters/ShadowSlaveCharacterTypes.h"
+#include "Combat/ShadowSlaveDamageableInterface.h"
+#include "Combat/ShadowSlaveCombatTypes.h"
 #include "ShadowSlaveCharacterBase.generated.h"
+
+class UShadowSlaveCombatComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
 
 /**
  * Base character class for all characters in Shadow Slave (player, companions, enemies).
- * Encapsulates core locomotion configuration, movement state transitions, and lifecycle hooks.
+ * Encapsulates core locomotion configuration, combat component integration,
+ * damage receiving interface implementation, and lifecycle hooks.
  */
 UCLASS(Abstract)
-class SHADOWSLAVE_API AShadowSlaveCharacterBase : public ACharacter
+class SHADOWSLAVE_API AShadowSlaveCharacterBase : public ACharacter, public IShadowSlaveDamageableInterface
 {
 	GENERATED_BODY()
 
@@ -21,9 +28,20 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
-	/** Delegate triggered whenever gait changes (e.g. for stamina drain or animation states) */
+	/* --- IShadowSlaveDamageableInterface --- */
+	virtual float TakeDamageCustom_Implementation(const FShadowSlaveDamageInfo& DamageInfo) override;
+	virtual bool IsAlive_Implementation() const override { return bIsAlive; }
+
+	// Standard engine damage handling
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+
+	/** Delegate triggered whenever gait changes */
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Locomotion")
 	FOnGaitChangedSignature OnGaitChanged;
+
+	/** Delegate triggered whenever character health changes */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
+	FOnCharacterHealthChangedSignature OnHealthChanged;
 
 	/** Returns whether this character is currently alive */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Character")
@@ -49,17 +67,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Locomotion")
 	virtual void StopSprint();
 
-	/** Condition hook for checking if sprint is currently allowed (future: stamina, status effects) */
+	/** Condition hook for checking if sprint is currently allowed */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Locomotion")
 	virtual bool CanSprint() const;
 
-	/** Enables or disables player/AI movement control (future: stuns, root motion attacks) */
+	/** Enables or disables player/AI movement control */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Locomotion")
 	virtual void SetMovementControlEnabled(bool bEnabled);
 
 	/** Returns whether movement control is enabled */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Locomotion")
 	bool IsMovementControlEnabled() const { return bCanMove; }
+
+	/** Returns the modular combat component */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat")
+	UShadowSlaveCombatComponent* GetCombatComponent() const { return CombatComponent; }
+
+	/** Returns current health */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
+	float GetCurrentHealth() const { return CurrentHealth; }
+
+	/** Returns maximum health */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
+	float GetMaxHealth() const { return MaxHealth; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -79,8 +109,20 @@ protected:
 	virtual void HandleDeath();
 
 protected:
+	/** Modular Combat Component responsible for combat state, attacks, and traces */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveCombatComponent> CombatComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Character")
 	bool bIsAlive = true;
+
+	/** Maximum health points */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes", meta = (ClampMin = "1.0"))
+	float MaxHealth = 100.0f;
+
+	/** Current health points */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes")
+	float CurrentHealth = 100.0f;
 
 	/** Controls whether movement input is accepted */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Locomotion")
@@ -100,11 +142,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Locomotion", meta = (ClampMin = "100.0"))
 	float SprintSpeed = 750.0f;
 
-	/** Maximum acceleration for smooth and responsive responsiveness */
+	/** Maximum acceleration for smooth responsiveness */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Locomotion", meta = (ClampMin = "100.0"))
 	float BaseMaxAcceleration = 2048.0f;
 
-	/** Braking deceleration when walking (prevents ice-skating) */
+	/** Braking deceleration when walking */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Locomotion", meta = (ClampMin = "0.0"))
 	float BaseBrakingDecelerationWalking = 2048.0f;
 

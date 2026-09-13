@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Characters/ShadowSlaveCharacterTypes.h"
+#include "Combat/ShadowSlaveCombatTypes.h"
 #include "ShadowSlaveAnimInstance.generated.h"
 
 class AShadowSlaveCharacterBase;
@@ -91,6 +92,10 @@ protected:
 	/** Reflects movement control status (future: stuns, root-motion attack locks) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Animation|State", meta = (AllowPrivateAccess = "true"))
 	bool bIsMovementControlEnabled = true;
+
+	/** Current combat state from the owning character's combat component */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Animation|Combat", meta = (AllowPrivateAccess = "true"))
+	ECombatState CurrentCombatState = ECombatState::Neutral;
 
 public:
 	/** Returns cached owning character */
