@@ -125,8 +125,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Metadata")
 	TMap<FName, FString> Metadata;
 
-	/* --- Development Test Factory --- */
+	/* --- Development Test & Canon Factories --- */
 
 	/** Creates a generic development test memory definition for verifying lifecycle, multi-enchantment, and equipment operations */
 	static UShadowSlaveMemoryDefinition* CreateTestMemoryDefinition(UObject* Outer = nullptr);
+
+	/** Creates a canonical verified Memory definition based on verified novel data */
+	static UShadowSlaveMemoryDefinition* CreateCanonMemoryDefinition(FName CanonMemoryId, UObject* Outer = nullptr);
 };
