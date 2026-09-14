@@ -8,6 +8,7 @@
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Progression/ShadowSlaveProgressionComponent.h"
 #include "Aspects/ShadowSlaveAspectComponent.h"
+#include "Interaction/ShadowSlaveInteractionComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -52,6 +53,9 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 
 	// Create modular aspect component
 	AspectComponent = CreateDefaultSubobject<UShadowSlaveAspectComponent>(TEXT("AspectComponent"));
+
+	// Create modular interaction component
+	InteractionComponent = CreateDefaultSubobject<UShadowSlaveInteractionComponent>(TEXT("InteractionComponent"));
 }
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -107,6 +111,12 @@ void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* Pla
 		if (HeavyAttackAction)
 		{
 			EnhancedInputComponent->BindAction(HeavyAttackAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::HeavyAttack);
+		}
+
+		// Interact
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::Interact);
 		}
 	}
 	else
@@ -197,6 +207,14 @@ void AShadowSlavePlayerCharacter::HeavyAttack()
 	if (bCanMove && CombatComponent)
 	{
 		CombatComponent->ExecuteAttack(EAttackType::Heavy);
+	}
+}
+
+void AShadowSlavePlayerCharacter::Interact()
+{
+	if (bCanMove && InteractionComponent)
+	{
+		InteractionComponent->TryInteract();
 	}
 }
 

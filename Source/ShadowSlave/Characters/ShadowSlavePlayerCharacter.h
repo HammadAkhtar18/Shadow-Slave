@@ -15,6 +15,7 @@ class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
 class UShadowSlaveProgressionComponent;
 class UShadowSlaveAspectComponent;
+class UShadowSlaveInteractionComponent;
 
 /**
  * Player-controlled character class for Shadow Slave (Sunless foundation).
@@ -49,6 +50,10 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	/** Modular aspect component managing aspect identity, abilities, and flaw */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Aspects", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveAspectComponent> AspectComponent;
+
+	/** Modular interaction component managing detection, prompts, and world interactions */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveInteractionComponent> InteractionComponent;
 
 	/* --- Camera Tunables --- */
 
@@ -110,6 +115,10 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* HeavyAttackAction;
 
+	/** Interact Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* InteractAction;
+
 public:
 	AShadowSlavePlayerCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
@@ -140,6 +149,9 @@ protected:
 	/** Heavy attack input handler */
 	void HeavyAttack();
 
+	/** Interact input handler */
+	void Interact();
+
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
@@ -161,4 +173,7 @@ public:
 
 	/** Returns AspectComponent subobject **/
 	FORCEINLINE UShadowSlaveAspectComponent* GetAspectComponent() const { return AspectComponent; }
+
+	/** Returns InteractionComponent subobject **/
+	FORCEINLINE UShadowSlaveInteractionComponent* GetInteractionComponent() const { return InteractionComponent; }
 };
