@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Save/ShadowSlaveSaveTypes.h"
+#include "Nightmares/ShadowSlaveNightmareSaveTypes.h"
 #include "ShadowSlaveSaveGame.generated.h"
 
 /**
@@ -81,6 +82,10 @@ public:
 	/** Serialized snapshot of opt-in persistent world objects */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|World")
 	FShadowSlaveWorldSaveData WorldData;
+
+	/** Serialized snapshot of Nightmare session and scenario state (if active) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Nightmare")
+	FShadowSlaveNightmareSaveData NightmareData;
 
 	/* --- Validation Helpers --- */
 

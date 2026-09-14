@@ -19,6 +19,7 @@
 #include "Items/ShadowSlaveItemDefinition.h"
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Memories/ShadowSlaveMemoryDefinition.h"
+#include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "ShadowSlave.h"
 
 UShadowSlaveSaveSubsystem::UShadowSlaveSaveSubsystem()
@@ -180,6 +181,14 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		CaptureWorldState(World, SaveObject->WorldData);
 	}
 
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+		{
+			SaveObject->NightmareData = NightmareSub->ExportSaveData();
+		}
+	}
+
 	return SaveObject;
 }
 
@@ -246,6 +255,18 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 	if (World && SaveGame->WorldData.bIsValid)
 	{
 		RestoreWorldState(World, SaveGame->WorldData);
+	}
+
+	// 9. Nightmare scenario restoration
+	if (SaveGame->NightmareData.bIsValid)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+			{
+				NightmareSub->ImportSaveData(SaveGame->NightmareData);
+			}
+		}
 	}
 
 	return true;
