@@ -143,6 +143,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Save")
 	bool ImportSaveData(const FShadowSlaveNightmareSaveData& InSaveData);
 
+	/* --- Pending Scenario Restoration (World Boundary) --- */
+
+	/** Returns true if a saved scenario is awaiting world streaming / level restoration */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Nightmare|Restore")
+	bool HasPendingScenarioRestore() const { return PendingRestoreState.bHasPendingRestore; }
+
+	/** Retrieves the pending restoration state */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Nightmare|Restore")
+	const FShadowSlavePendingNightmareRestore& GetPendingScenarioRestore() const { return PendingRestoreState; }
+
+	/** Clears any pending scenario restoration */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Restore")
+	void ClearPendingScenarioRestore();
+
+	/**
+	 * Resumes a pending restored scenario once the scenario world has been streamed/loaded.
+	 * Integration boundary for future level streaming/world transition infrastructure.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Restore")
+	bool ResumePendingScenario(APlayerController* InParticipatingController = nullptr);
+
 	/* --- Lifecycle Delegates --- */
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Nightmare|Events")
@@ -225,4 +246,11 @@ protected:
 
 	/** Participating player character (for damage/death listening) */
 	TWeakObjectPtr<AShadowSlaveCharacterBase> ParticipatingCharacter;
+
+	/** Tracked pending restoration state when active scenarios are loaded before world streaming */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Nightmare|Restore")
+	FShadowSlavePendingNightmareRestore PendingRestoreState;
+
+	/** Resolves a scenario definition from Asset Manager, loaded memory, or development factories */
+	UShadowSlaveNightmareScenarioDefinition* ResolveScenarioDefinition(FName ScenarioId) const;
 };

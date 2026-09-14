@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 #include "Nightmares/ShadowSlaveNightmareObjectiveTypes.h"
+#include "Nightmares/ShadowSlaveNightmareSaveTypes.h"
 #include "ShadowSlaveNightmareObjectiveTracker.generated.h"
 
 class UShadowSlaveNightmareScenarioDefinition;
@@ -32,6 +33,16 @@ public:
 	/** Clears and resets all tracked objective states */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Objectives")
 	void ResetObjectives();
+
+	/**
+	 * Restores runtime objective states from serialized save data.
+	 * Matches by ObjectiveId against existing initialized objectives from the scenario definition.
+	 * Preserves TargetProgress and bIsRequired from the definition (static authority).
+	 * Silently restores State, CurrentProgress, and DynamicProperties without broadcasting gameplay event delegates.
+	 * Returns true if all valid saved objectives were applied without duplicate collisions or corruption.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Objectives")
+	bool RestoreObjectiveRuntimeStates(const TArray<FShadowSlaveNightmareObjectiveSaveData>& SavedObjectives);
 
 	/** Transitions an objective to Active state */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Nightmare|Objectives")

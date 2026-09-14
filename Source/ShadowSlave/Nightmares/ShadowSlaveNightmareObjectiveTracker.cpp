@@ -48,6 +48,57 @@ void UShadowSlaveNightmareObjectiveTracker::ResetObjectives()
 	BoundScenarioDefinition.Reset();
 }
 
+bool UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates(const TArray<FShadowSlaveNightmareObjectiveSaveData>& SavedObjectives)
+{
+	if (!BoundScenarioDefinition.IsValid())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates called without bound scenario definition."));
+		return false;
+	}
+
+	TSet<FName> SeenSavedIds;
+
+	for (const FShadowSlaveNightmareObjectiveSaveData& SavedObj : SavedObjectives)
+	{
+		if (SavedObj.ObjectiveId.IsNone())
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates: Encountered empty ObjectiveId in save data."));
+			continue;
+		}
+
+		if (SeenSavedIds.Contains(SavedObj.ObjectiveId))
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates: Duplicate ObjectiveId '%s' in save data. Skipping duplicate."), *SavedObj.ObjectiveId.ToString());
+			continue;
+		}
+		SeenSavedIds.Add(SavedObj.ObjectiveId);
+
+		FShadowSlaveNightmareObjectiveRuntimeState* RuntimeState = ObjectiveRuntimeStates.Find(SavedObj.ObjectiveId);
+		if (!RuntimeState)
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates: Saved objective '%s' not present in scenario definition '%s'. Skipping unknown objective."),
+				*SavedObj.ObjectiveId.ToString(),
+				*BoundScenarioDefinition->ScenarioId.ToString()
+			);
+			continue;
+		}
+
+		// Restore runtime mutable state quietly (no gameplay delegates broadcast during loading)
+		RuntimeState->State = SavedObj.State;
+		RuntimeState->CurrentProgress = FMath::Clamp(SavedObj.CurrentProgress, 0.0f, RuntimeState->TargetProgress);
+		RuntimeState->DynamicProperties = SavedObj.DynamicProperties;
+
+		// Note: TargetProgress and bIsRequired are deliberately preserved from the DataAsset definition.
+	}
+
+	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareObjectiveTracker: Restored %d objective runtime states for scenario '%s'."),
+		SeenSavedIds.Num(),
+		*BoundScenarioDefinition->ScenarioId.ToString()
+	);
+
+	return true;
+}
+
 bool UShadowSlaveNightmareObjectiveTracker::ActivateObjective(FName ObjectiveId)
 {
 	FShadowSlaveNightmareObjectiveRuntimeState* State = ObjectiveRuntimeStates.Find(ObjectiveId);
