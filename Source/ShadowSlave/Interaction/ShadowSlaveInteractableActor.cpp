@@ -64,3 +64,38 @@ FShadowSlaveInteractionResult AShadowSlaveInteractableActor::ExecuteInteraction(
 	// Base implementation succeeds generically; specialized subclasses override with custom logic
 	return FShadowSlaveInteractionResult::Success(InteractionId);
 }
+
+FName AShadowSlaveInteractableActor::GetPersistentSaveId_Implementation() const
+{
+	return PersistentSaveId;
+}
+
+bool AShadowSlaveInteractableActor::CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord)
+{
+	if (PersistentSaveId.IsNone())
+	{
+		return false;
+	}
+
+	OutRecord.PersistentId = PersistentSaveId;
+	OutRecord.ActorClass = GetClass();
+	OutRecord.ActorTransform = GetActorTransform();
+	OutRecord.bIsActive = !IsHidden();
+	OutRecord.CustomStateData.Add(TEXT("bIsInteractionEnabled"), bIsInteractionEnabled ? TEXT("1") : TEXT("0"));
+	return true;
+}
+
+bool AShadowSlaveInteractableActor::RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord)
+{
+	if (PersistentSaveId.IsNone() || InRecord.PersistentId != PersistentSaveId)
+	{
+		return false;
+	}
+
+	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("bIsInteractionEnabled")))
+	{
+		SetInteractionEnabled(*Val == TEXT("1"));
+	}
+
+	return true;
+}

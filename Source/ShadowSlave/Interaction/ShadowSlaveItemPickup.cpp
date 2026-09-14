@@ -90,3 +90,29 @@ FShadowSlaveInteractionResult AShadowSlaveItemPickup::ExecuteInteraction(AActor*
 	OnCollected(Interactor);
 	return FShadowSlaveInteractionResult::Success(FName(TEXT("ItemAcquired")));
 }
+
+bool AShadowSlaveItemPickup::CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord)
+{
+	if (!Super::CaptureSaveRecord_Implementation(OutRecord))
+	{
+		return false;
+	}
+
+	OutRecord.CustomStateData.Add(TEXT("Quantity"), FString::FromInt(Quantity));
+	return true;
+}
+
+bool AShadowSlaveItemPickup::RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord)
+{
+	if (!Super::RestoreSaveRecord_Implementation(InRecord))
+	{
+		return false;
+	}
+
+	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("Quantity")))
+	{
+		Quantity = FCString::Atoi(**Val);
+	}
+
+	return true;
+}

@@ -95,6 +95,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
 	void ClearMemories();
 
+	/**
+	 * Dedicated persistence restoration API: replaces current owned Memories with saved instances.
+	 * Preserves original instance GUIDs, equipped state, runtime state, and dynamic properties without triggering gameplay acquisition rules.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Persistence")
+	void RestoreMemories(const TArray<FShadowSlaveMemoryInstance>& InInstances);
+
 	/* --- Equipment Operations --- */
 
 	/**

@@ -28,6 +28,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Interaction|Pickup")
 	virtual void OnCollected(AActor* Interactor);
 
+	/* --- IShadowSlaveSaveableInterface Overrides --- */
+	virtual bool CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord) override;
+	virtual bool RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord) override;
+
 protected:
 	/** Whether this pickup actor should be destroyed when collected */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Interaction|Pickup")

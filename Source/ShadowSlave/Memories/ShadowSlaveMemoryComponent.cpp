@@ -201,6 +201,21 @@ void UShadowSlaveMemoryComponent::ClearMemories()
 	OnMemoryCollectionChanged.Broadcast();
 }
 
+void UShadowSlaveMemoryComponent::RestoreMemories(const TArray<FShadowSlaveMemoryInstance>& InInstances)
+{
+	Memories.Empty();
+
+	for (const FShadowSlaveMemoryInstance& Instance : InInstances)
+	{
+		if (Instance.IsValid())
+		{
+			Memories.Add(Instance);
+		}
+	}
+
+	OnMemoryCollectionChanged.Broadcast();
+}
+
 bool UShadowSlaveMemoryComponent::EquipMemory(const FGuid& InstanceId)
 {
 	if (!InstanceId.IsValid())

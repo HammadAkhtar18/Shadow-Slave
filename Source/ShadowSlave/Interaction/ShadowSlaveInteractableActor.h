@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Interaction/ShadowSlaveInteractableInterface.h"
 #include "Interaction/ShadowSlaveInteractionTypes.h"
+#include "Save/ShadowSlaveSaveableInterface.h"
 #include "ShadowSlaveInteractableActor.generated.h"
 
 class USceneComponent;
@@ -14,10 +15,11 @@ class UStaticMeshComponent;
 /**
  * Reusable base actor for generic interactable world objects in Shadow Slave.
  * Implements IShadowSlaveInteractableInterface with configurable availability, prompts, and priorities.
+ * Implements IShadowSlaveSaveableInterface for opt-in persistence when PersistentSaveId is specified.
  * Designed purely event-driven without tick overhead.
  */
 UCLASS(Abstract)
-class SHADOWSLAVE_API AShadowSlaveInteractableActor : public AActor, public IShadowSlaveInteractableInterface
+class SHADOWSLAVE_API AShadowSlaveInteractableActor : public AActor, public IShadowSlaveInteractableInterface, public IShadowSlaveSaveableInterface
 {
 	GENERATED_BODY()
 
@@ -30,6 +32,12 @@ public:
 	virtual FText GetInteractionPrompt_Implementation(AActor* Interactor) override;
 	virtual FShadowSlaveInteractionResult Interact_Implementation(AActor* Interactor) override;
 	virtual int32 GetInteractionPriority_Implementation(AActor* Interactor) override;
+
+	/* --- IShadowSlaveSaveableInterface Implementation --- */
+
+	virtual FName GetPersistentSaveId_Implementation() const override;
+	virtual bool CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord) override;
+	virtual bool RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord) override;
 
 	/* --- Interaction Configuration --- */
 
@@ -77,4 +85,8 @@ protected:
 	/** Unique identifier for this interaction */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Interaction|Config")
 	FName InteractionId = NAME_None;
+
+	/** Optional unique persistence identifier for saving/loading this actor. If NAME_None, persistence is disabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FName PersistentSaveId = NAME_None;
 };

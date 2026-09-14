@@ -39,6 +39,10 @@ public:
 protected:
 	virtual FShadowSlaveInteractionResult ExecuteInteraction(AActor* Interactor) override;
 
+	/* --- IShadowSlaveSaveableInterface Overrides --- */
+	virtual bool CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord) override;
+	virtual bool RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord) override;
+
 	/** Data-driven item archetype referenced by this pickup */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Interaction|ItemPickup")
 	TObjectPtr<UShadowSlaveItemDefinition> ItemDefinition = nullptr;

@@ -90,3 +90,34 @@ FShadowSlaveInteractionResult AShadowSlaveInteractableDoor::ExecuteInteraction(A
 
 	return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Failed to toggle door.")), InteractionId);
 }
+
+bool AShadowSlaveInteractableDoor::CaptureSaveRecord_Implementation(FShadowSlaveWorldActorSaveRecord& OutRecord)
+{
+	if (!Super::CaptureSaveRecord_Implementation(OutRecord))
+	{
+		return false;
+	}
+
+	OutRecord.CustomStateData.Add(TEXT("bIsOpen"), bIsOpen ? TEXT("1") : TEXT("0"));
+	OutRecord.CustomStateData.Add(TEXT("bIsLocked"), bIsLocked ? TEXT("1") : TEXT("0"));
+	return true;
+}
+
+bool AShadowSlaveInteractableDoor::RestoreSaveRecord_Implementation(const FShadowSlaveWorldActorSaveRecord& InRecord)
+{
+	if (!Super::RestoreSaveRecord_Implementation(InRecord))
+	{
+		return false;
+	}
+
+	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("bIsOpen")))
+	{
+		bIsOpen = (*Val == TEXT("1"));
+	}
+	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("bIsLocked")))
+	{
+		bIsLocked = (*Val == TEXT("1"));
+	}
+
+	return true;
+}

@@ -240,6 +240,22 @@ void UShadowSlaveInventoryComponent::ClearInventory()
 	OnInventoryChanged.Broadcast();
 }
 
+void UShadowSlaveInventoryComponent::RestoreInventory(const TArray<FShadowSlaveItemInstance>& InInstances, int32 InCapacity)
+{
+	MaxSlots = FMath::Max(1, InCapacity);
+	Slots.Empty();
+
+	for (const FShadowSlaveItemInstance& Item : InInstances)
+	{
+		if (Item.IsValid())
+		{
+			Slots.Add(Item);
+		}
+	}
+
+	OnInventoryChanged.Broadcast();
+}
+
 TArray<FShadowSlaveItemInstance> UShadowSlaveInventoryComponent::GetItemsByType(EShadowSlaveItemType ItemType) const
 {
 	TArray<FShadowSlaveItemInstance> Filtered;

@@ -88,6 +88,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Inventory|Operations")
 	void ClearInventory();
 
+	/**
+	 * Dedicated persistence restoration API: replaces current inventory slots with saved instances.
+	 * Preserves original instance GUIDs, quantities, and dynamic properties without triggering gameplay acquisition rules.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Inventory|Persistence")
+	void RestoreInventory(const TArray<FShadowSlaveItemInstance>& InInstances, int32 InCapacity);
+
 	/** Returns all current item slots */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Inventory|Queries")
 	const TArray<FShadowSlaveItemInstance>& GetSlots() const { return Slots; }
