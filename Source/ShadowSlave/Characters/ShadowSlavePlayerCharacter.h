@@ -13,6 +13,8 @@ class UInputMappingContext;
 class UInputAction;
 class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
+class UShadowSlaveProgressionComponent;
+class UShadowSlaveAspectComponent;
 
 /**
  * Player-controlled character class for Shadow Slave (Sunless foundation).
@@ -39,6 +41,14 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	/** Modular memory component managing player Memories, manifestation, and equipment */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Memories", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveMemoryComponent> MemoryComponent;
+
+	/** Modular progression component managing character rank, soul cores, and advancement */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Progression", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveProgressionComponent> ProgressionComponent;
+
+	/** Modular aspect component managing aspect identity, abilities, and flaw */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Aspects", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveAspectComponent> AspectComponent;
 
 	/* --- Camera Tunables --- */
 
@@ -145,4 +155,10 @@ public:
 
 	/** Returns MemoryComponent subobject **/
 	FORCEINLINE UShadowSlaveMemoryComponent* GetMemoryComponent() const { return MemoryComponent; }
+
+	/** Returns ProgressionComponent subobject **/
+	FORCEINLINE UShadowSlaveProgressionComponent* GetProgressionComponent() const { return ProgressionComponent; }
+
+	/** Returns AspectComponent subobject **/
+	FORCEINLINE UShadowSlaveAspectComponent* GetAspectComponent() const { return AspectComponent; }
 };
