@@ -28,6 +28,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* InPawn) override;
 
 	/** Default Input Mapping Context applied on start */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input")

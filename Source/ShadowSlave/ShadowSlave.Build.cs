@@ -22,7 +22,10 @@ public class ShadowSlave : ModuleRules
 				"InputCore",
 				"EnhancedInput",
 				"AIModule",
-				"NavigationSystem"
+				"NavigationSystem",
+				"UMG",
+				"Slate",
+				"SlateCore"
 			}
 		);
 
