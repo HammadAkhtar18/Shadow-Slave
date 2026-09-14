@@ -12,6 +12,53 @@ EShadowSlaveMemoryTier FShadowSlaveMemoryInstance::GetTier() const
 	return MemoryDefinition ? MemoryDefinition->Tier : EShadowSlaveMemoryTier::Unknown;
 }
 
+bool FShadowSlaveMemoryInstance::HasKnownRank() const
+{
+	return GetRank() != EShadowSlaveMemoryRank::Unknown;
+}
+
+bool FShadowSlaveMemoryInstance::HasKnownTier() const
+{
+	return GetTier() != EShadowSlaveMemoryTier::Unknown;
+}
+
+int32 FShadowSlaveMemoryInstance::GetTotalEnchantmentCount() const
+{
+	const int32 BaseCount = MemoryDefinition ? MemoryDefinition->GetEnchantmentCount() : 0;
+	return BaseCount + DynamicEnchantments.Num();
+}
+
+TArray<FShadowSlaveMemoryEnchantment> FShadowSlaveMemoryInstance::GetAllEnchantments() const
+{
+	TArray<FShadowSlaveMemoryEnchantment> All;
+	if (MemoryDefinition)
+	{
+		All.Append(MemoryDefinition->Enchantments);
+	}
+	All.Append(DynamicEnchantments);
+	return All;
+}
+
+void FShadowSlaveMemoryInstance::SetDynamicProperty(FName Key, const FString& Value)
+{
+	DynamicProperties.Add(Key, Value);
+}
+
+bool FShadowSlaveMemoryInstance::GetDynamicProperty(FName Key, FString& OutValue) const
+{
+	if (const FString* Found = DynamicProperties.Find(Key))
+	{
+		OutValue = *Found;
+		return true;
+	}
+	return false;
+}
+
+bool FShadowSlaveMemoryInstance::RemoveDynamicProperty(FName Key)
+{
+	return DynamicProperties.Remove(Key) > 0;
+}
+
 UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
 {
 	MemoryId = NAME_None;

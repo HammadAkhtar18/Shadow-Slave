@@ -12,28 +12,40 @@ UShadowSlaveMemoryComponent::UShadowSlaveMemoryComponent()
 	bEnforceUniqueSlotEquip = false;
 }
 
-bool UShadowSlaveMemoryComponent::AddMemory(UShadowSlaveMemoryDefinition* MemoryDef, FGuid& OutInstanceId)
+bool UShadowSlaveMemoryComponent::AcquireMemory(UShadowSlaveMemoryDefinition* MemoryDef, FShadowSlaveMemoryInstance& OutInstance)
 {
 	if (!MemoryDef)
 	{
-		OutInstanceId.Invalidate();
+		OutInstance = FShadowSlaveMemoryInstance();
 		return false;
 	}
 
 	FShadowSlaveMemoryInstance NewInstance(MemoryDef);
-	OutInstanceId = NewInstance.InstanceId;
-
 	Memories.Add(NewInstance);
+	OutInstance = NewInstance;
 
 	OnMemoryAdded.Broadcast(NewInstance);
 	OnMemoryCollectionChanged.Broadcast();
 	return true;
 }
 
+bool UShadowSlaveMemoryComponent::AddMemory(UShadowSlaveMemoryDefinition* MemoryDef, FGuid& OutInstanceId)
+{
+	FShadowSlaveMemoryInstance NewInstance;
+	if (AcquireMemory(MemoryDef, NewInstance))
+	{
+		OutInstanceId = NewInstance.InstanceId;
+		return true;
+	}
+
+	OutInstanceId.Invalidate();
+	return false;
+}
+
 bool UShadowSlaveMemoryComponent::AddMemorySimple(UShadowSlaveMemoryDefinition* MemoryDef)
 {
-	FGuid DummyGuid;
-	return AddMemory(MemoryDef, DummyGuid);
+	FShadowSlaveMemoryInstance DummyInstance;
+	return AcquireMemory(MemoryDef, DummyInstance);
 }
 
 bool UShadowSlaveMemoryComponent::AddMemoryInstance(const FShadowSlaveMemoryInstance& InInstance)
@@ -70,7 +82,7 @@ bool UShadowSlaveMemoryComponent::RemoveMemory(const FGuid& InstanceId)
 	{
 		if (Memories[i].InstanceId == InstanceId)
 		{
-			// If currently equipped, unequip before removing
+			// If currently equipped, unequip before removing ownership
 			if (Memories[i].bIsEquipped)
 			{
 				UnequipMemory(InstanceId);
@@ -134,6 +146,61 @@ bool UShadowSlaveMemoryComponent::DestroyMemory(const FGuid& InstanceId)
 	return false;
 }
 
+bool UShadowSlaveMemoryComponent::ConsumeMemory(const FGuid& InstanceId, FShadowSlaveMemoryConsumptionEffect& OutEffectApplied)
+{
+	if (!InstanceId.IsValid())
+	{
+		return false;
+	}
+
+	for (int32 i = 0; i < Memories.Num(); ++i)
+	{
+		if (Memories[i].InstanceId == InstanceId)
+		{
+			if (!Memories[i].MemoryDefinition || !Memories[i].MemoryDefinition->CanBeConsumed())
+			{
+				return false;
+			}
+
+			OutEffectApplied = Memories[i].MemoryDefinition->ConsumptionEffect;
+
+			if (Memories[i].bIsEquipped)
+			{
+				UnequipMemory(InstanceId);
+			}
+
+			FShadowSlaveMemoryInstance ConsumedInstance = Memories[i];
+			Memories.RemoveAt(i);
+
+			OnMemoryConsumed.Broadcast(ConsumedInstance, OutEffectApplied);
+			OnMemoryCollectionChanged.Broadcast();
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UShadowSlaveMemoryComponent::ClearMemories()
+{
+	if (Memories.Num() == 0)
+	{
+		return;
+	}
+
+	for (FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.bIsEquipped)
+		{
+			Instance.bIsEquipped = false;
+			OnMemoryUnequipped.Broadcast(Instance);
+		}
+	}
+
+	Memories.Empty();
+	OnMemoryCollectionChanged.Broadcast();
+}
+
 bool UShadowSlaveMemoryComponent::EquipMemory(const FGuid& InstanceId)
 {
 	if (!InstanceId.IsValid())
@@ -156,28 +223,27 @@ bool UShadowSlaveMemoryComponent::EquipMemory(const FGuid& InstanceId)
 			}
 
 			// Check configurable slot conflict policy (component setting OR definition requirement)
-			const bool bCheckExclusivity = bEnforceUniqueSlotEquip || Memories[i].MemoryDefinition->bRequiresExclusiveSlot;
 			const EShadowSlaveEquipmentSlot TargetSlot = Memories[i].MemoryDefinition->EquipmentSlot;
+			const bool bNewRequiresExclusivity = bEnforceUniqueSlotEquip || Memories[i].MemoryDefinition->bRequiresExclusiveSlot;
 
-			if (bCheckExclusivity && TargetSlot != EShadowSlaveEquipmentSlot::None)
+			if (TargetSlot != EShadowSlaveEquipmentSlot::None)
 			{
 				for (int32 j = 0; j < Memories.Num(); ++j)
 				{
 					if (j != i && Memories[j].bIsEquipped && Memories[j].MemoryDefinition && Memories[j].MemoryDefinition->EquipmentSlot == TargetSlot)
 					{
-						UnequipMemory(Memories[j].InstanceId);
-						break;
+						const bool bExistingRequiresExclusivity = bEnforceUniqueSlotEquip || Memories[j].MemoryDefinition->bRequiresExclusiveSlot;
+						if (bNewRequiresExclusivity || bExistingRequiresExclusivity)
+						{
+							UnequipMemory(Memories[j].InstanceId);
+						}
 					}
 				}
 			}
 
-			const EShadowSlaveMemoryState OldState = Memories[i].State;
 			Memories[i].bIsEquipped = true;
-			Memories[i].State = EShadowSlaveMemoryState::Summoned;
 
 			OnMemoryEquipped.Broadcast(Memories[i]);
-			OnMemoryStateChanged.Broadcast(Memories[i], EShadowSlaveMemoryState::Summoned, OldState);
-			OnMemoryCollectionChanged.Broadcast();
 			return true;
 		}
 	}
@@ -201,13 +267,9 @@ bool UShadowSlaveMemoryComponent::UnequipMemory(const FGuid& InstanceId)
 				return false; // Not equipped
 			}
 
-			const EShadowSlaveMemoryState OldState = Memories[i].State;
 			Memories[i].bIsEquipped = false;
-			Memories[i].State = EShadowSlaveMemoryState::Dormant;
 
 			OnMemoryUnequipped.Broadcast(Memories[i]);
-			OnMemoryStateChanged.Broadcast(Memories[i], EShadowSlaveMemoryState::Dormant, OldState);
-			OnMemoryCollectionChanged.Broadcast();
 			return true;
 		}
 	}
@@ -234,17 +296,7 @@ bool UShadowSlaveMemoryComponent::SetMemoryState(const FGuid& InstanceId, EShado
 			const EShadowSlaveMemoryState OldState = Instance.State;
 			Instance.State = NewState;
 
-			if (NewState == EShadowSlaveMemoryState::Dormant)
-			{
-				Instance.bIsEquipped = false;
-			}
-			else if (NewState == EShadowSlaveMemoryState::Summoned)
-			{
-				Instance.bIsEquipped = true;
-			}
-
 			OnMemoryStateChanged.Broadcast(Instance, NewState, OldState);
-			OnMemoryCollectionChanged.Broadcast();
 			return true;
 		}
 	}
@@ -273,15 +325,65 @@ bool UShadowSlaveMemoryComponent::GetMemoryState(const FGuid& InstanceId, EShado
 	return false;
 }
 
-void UShadowSlaveMemoryComponent::ClearMemories()
+bool UShadowSlaveMemoryComponent::SetMemoryDynamicProperty(const FGuid& InstanceId, FName Key, const FString& Value)
 {
-	if (Memories.Num() == 0)
+	if (!InstanceId.IsValid() || Key.IsNone())
 	{
-		return;
+		return false;
 	}
 
-	Memories.Empty();
-	OnMemoryCollectionChanged.Broadcast();
+	for (FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.InstanceId == InstanceId)
+		{
+			Instance.SetDynamicProperty(Key, Value);
+			OnMemoryModified.Broadcast(Instance);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::GetMemoryDynamicProperty(const FGuid& InstanceId, FName Key, FString& OutValue) const
+{
+	if (!InstanceId.IsValid() || Key.IsNone())
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.InstanceId == InstanceId)
+		{
+			return Instance.GetDynamicProperty(Key, OutValue);
+		}
+	}
+
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::RemoveMemoryDynamicProperty(const FGuid& InstanceId, FName Key)
+{
+	if (!InstanceId.IsValid() || Key.IsNone())
+	{
+		return false;
+	}
+
+	for (FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.InstanceId == InstanceId)
+		{
+			if (Instance.RemoveDynamicProperty(Key))
+			{
+				OnMemoryModified.Broadcast(Instance);
+				return true;
+			}
+			return false;
+		}
+	}
+
+	return false;
 }
 
 bool UShadowSlaveMemoryComponent::HasMemory(const UShadowSlaveMemoryDefinition* MemoryDef) const
@@ -324,6 +426,7 @@ bool UShadowSlaveMemoryComponent::FindMemory(const FGuid& InstanceId, FShadowSla
 {
 	if (!InstanceId.IsValid())
 	{
+		OutInstance = FShadowSlaveMemoryInstance();
 		return false;
 	}
 
@@ -336,6 +439,7 @@ bool UShadowSlaveMemoryComponent::FindMemory(const FGuid& InstanceId, FShadowSla
 		}
 	}
 
+	OutInstance = FShadowSlaveMemoryInstance();
 	return false;
 }
 
@@ -343,6 +447,7 @@ bool UShadowSlaveMemoryComponent::FindMemoryByDefinition(const UShadowSlaveMemor
 {
 	if (!MemoryDef)
 	{
+		OutInstance = FShadowSlaveMemoryInstance();
 		return false;
 	}
 
@@ -355,7 +460,27 @@ bool UShadowSlaveMemoryComponent::FindMemoryByDefinition(const UShadowSlaveMemor
 		}
 	}
 
+	OutInstance = FShadowSlaveMemoryInstance();
 	return false;
+}
+
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::FindAllMemoriesByDefinition(const UShadowSlaveMemoryDefinition* MemoryDef) const
+{
+	TArray<FShadowSlaveMemoryInstance> Matches;
+	if (!MemoryDef)
+	{
+		return Matches;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.MemoryDefinition == MemoryDef)
+		{
+			Matches.Add(Instance);
+		}
+	}
+
+	return Matches;
 }
 
 bool UShadowSlaveMemoryComponent::IsMemoryEquipped(const FGuid& InstanceId) const
@@ -415,6 +540,32 @@ TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesByTie
 	return Filtered;
 }
 
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesWithKnownRank() const
+{
+	TArray<FShadowSlaveMemoryInstance> Filtered;
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.MemoryDefinition && Instance.MemoryDefinition->HasKnownRank())
+		{
+			Filtered.Add(Instance);
+		}
+	}
+	return Filtered;
+}
+
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetMemoriesWithKnownTier() const
+{
+	TArray<FShadowSlaveMemoryInstance> Filtered;
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.MemoryDefinition && Instance.MemoryDefinition->HasKnownTier())
+		{
+			Filtered.Add(Instance);
+		}
+	}
+	return Filtered;
+}
+
 TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetEquippedMemories() const
 {
 	TArray<FShadowSlaveMemoryInstance> Equipped;
@@ -426,6 +577,60 @@ TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetEquippedMemor
 		}
 	}
 	return Equipped;
+}
+
+TArray<FShadowSlaveMemoryInstance> UShadowSlaveMemoryComponent::GetEquippedMemoriesBySlot(EShadowSlaveEquipmentSlot Slot) const
+{
+	TArray<FShadowSlaveMemoryInstance> SlotMemories;
+	if (Slot == EShadowSlaveEquipmentSlot::None)
+	{
+		return SlotMemories;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.bIsEquipped && Instance.MemoryDefinition && Instance.MemoryDefinition->EquipmentSlot == Slot)
+		{
+			SlotMemories.Add(Instance);
+		}
+	}
+	return SlotMemories;
+}
+
+bool UShadowSlaveMemoryComponent::GetEquippedMemoryInSlot(EShadowSlaveEquipmentSlot Slot, FShadowSlaveMemoryInstance& OutInstance) const
+{
+	OutInstance = FShadowSlaveMemoryInstance();
+	if (Slot == EShadowSlaveEquipmentSlot::None)
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.bIsEquipped && Instance.MemoryDefinition && Instance.MemoryDefinition->EquipmentSlot == Slot)
+		{
+			OutInstance = Instance;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UShadowSlaveMemoryComponent::IsSlotOccupied(EShadowSlaveEquipmentSlot Slot) const
+{
+	if (Slot == EShadowSlaveEquipmentSlot::None)
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveMemoryInstance& Instance : Memories)
+	{
+		if (Instance.bIsEquipped && Instance.MemoryDefinition && Instance.MemoryDefinition->EquipmentSlot == Slot)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 bool UShadowSlaveMemoryComponent::CanConsumeMemory(const FGuid& InstanceId) const
@@ -473,6 +678,9 @@ bool UShadowSlaveMemoryComponent::TransferToInventory(const FGuid& InstanceId, U
 	const bool bAdded = TargetInventory->AddItem(ItemDef, 1, OutRemainder);
 	if (bAdded && OutRemainder == 0)
 	{
+		// Broadcast transfer hook before removing from authoritative Memory ownership
+		OnMemoryTransferred.Broadcast(FoundInstance, TargetInventory);
+
 		// Atomically remove from MemoryComponent to maintain single authoritative ownership
 		RemoveMemory(InstanceId);
 		return true;
@@ -500,8 +708,8 @@ void UShadowSlaveMemoryComponent::LogMemoryContents() const
 		const FString MemName = Instance.MemoryDefinition ? Instance.MemoryDefinition->DisplayName.ToString() : TEXT("Invalid");
 		const FString RankStr = Instance.MemoryDefinition ? UEnum::GetValueAsString(Instance.MemoryDefinition->Rank) : TEXT("Unknown");
 		const FString TierStr = Instance.MemoryDefinition ? UEnum::GetValueAsString(Instance.MemoryDefinition->Tier) : TEXT("Unknown");
-		const int32 EnchantmentCount = Instance.MemoryDefinition ? Instance.MemoryDefinition->GetEnchantmentCount() : 0;
-		const FString EquippedStr = Instance.bIsEquipped ? TEXT("Equipped/Summoned") : TEXT("Dormant");
+		const int32 EnchantmentCount = Instance.GetTotalEnchantmentCount();
+		const FString EquippedStr = Instance.bIsEquipped ? TEXT("Equipped") : TEXT("Unequipped");
 		const FString StateStr = UEnum::GetValueAsString(Instance.State);
 
 		UE_LOG(LogShadowSlave, Log, TEXT("  Memory [%d]: %s [Rank: %s, Tier: %s, Enchantments: %d] (%s, State: %s, GUID: %s)"),

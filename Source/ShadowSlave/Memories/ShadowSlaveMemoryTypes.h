@@ -7,6 +7,7 @@
 #include "ShadowSlaveMemoryTypes.generated.h"
 
 class UShadowSlaveMemoryDefinition;
+class UShadowSlaveInventoryComponent;
 
 /**
  * Canon Memory Ranks verified from the Shadow Slave novel.
@@ -188,7 +189,11 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryInstance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Memories")
 	bool bIsEquipped = false;
 
-	/** Optional instance-specific dynamic properties for save-game and future state support */
+	/** Dynamic instance-specific enchantments for future weaving/modification without altering static definition */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Memories")
+	TArray<FShadowSlaveMemoryEnchantment> DynamicEnchantments;
+
+	/** Optional instance-specific dynamic properties for save-game, modifications, and future state support */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Memories")
 	TMap<FName, FString> DynamicProperties;
 
@@ -216,6 +221,27 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryInstance
 
 	/** Safe helper to access the underlying definition's Tier */
 	EShadowSlaveMemoryTier GetTier() const;
+
+	/** Safe helper to check if this instance has a verified/known Rank */
+	bool HasKnownRank() const;
+
+	/** Safe helper to check if this instance has a verified/known Tier */
+	bool HasKnownTier() const;
+
+	/** Returns total count of enchantments combining static definition and dynamic enchantments */
+	int32 GetTotalEnchantmentCount() const;
+
+	/** Returns all enchantments combining static definition and dynamic enchantments */
+	TArray<FShadowSlaveMemoryEnchantment> GetAllEnchantments() const;
+
+	/** Sets an instance-level dynamic property */
+	void SetDynamicProperty(FName Key, const FString& Value);
+
+	/** Gets an instance-level dynamic property */
+	bool GetDynamicProperty(FName Key, FString& OutValue) const;
+
+	/** Removes an instance-level dynamic property */
+	bool RemoveDynamicProperty(FName Key);
 };
 
 /* --- Event Delegates --- */
@@ -223,7 +249,10 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryInstance
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryAddedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryRemovedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryDestroyedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMemoryConsumedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance, const FShadowSlaveMemoryConsumptionEffect&, ConsumedEffect);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryEquippedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryUnequippedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMemoryTransferredSignature, const FShadowSlaveMemoryInstance&, MemoryInstance, UShadowSlaveInventoryComponent*, TargetInventory);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMemoryModifiedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnMemoryStateChangedSignature, const FShadowSlaveMemoryInstance&, MemoryInstance, EShadowSlaveMemoryState, NewState, EShadowSlaveMemoryState, OldState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMemoryCollectionChangedSignature);

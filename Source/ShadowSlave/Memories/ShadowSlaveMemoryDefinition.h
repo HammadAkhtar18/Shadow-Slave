@@ -64,6 +64,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Classification")
 	bool bRequiresExclusiveSlot = false;
 
+	/** Returns whether this Memory specifies an actual equipment slot (i.e. EquipmentSlot != None) */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memory|Classification")
+	bool HasEquipmentSlot() const { return EquipmentSlot != EShadowSlaveEquipmentSlot::None; }
+
+	/** Safe helper to check if this definition has a verified/known Rank */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memory|Classification")
+	bool HasKnownRank() const { return Rank != EShadowSlaveMemoryRank::Unknown; }
+
+	/** Safe helper to check if this definition has a verified/known Tier */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memory|Classification")
+	bool HasKnownTier() const { return Tier != EShadowSlaveMemoryTier::Unknown; }
+
 	/* --- Usage & Activation --- */
 
 	/** Whether this Memory can be manifested and equipped onto the owner */

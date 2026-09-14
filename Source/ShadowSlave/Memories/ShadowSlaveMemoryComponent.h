@@ -30,6 +30,13 @@ public:
 	/* --- Memory Ownership & Lifecycle --- */
 
 	/**
+	 * Explicit acquisition API: instantiates and adds a new Memory to this component based on the provided definition.
+	 * Returns true if successful and outputs the fully initialized runtime instance with unique GUID and Dormant state.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
+	bool AcquireMemory(UShadowSlaveMemoryDefinition* MemoryDef, FShadowSlaveMemoryInstance& OutInstance);
+
+	/**
 	 * Instantiates and adds a new Memory to this component based on the provided definition.
 	 * Returns true if the Memory was successfully added, and outputs its unique InstanceId.
 	 */
@@ -66,12 +73,21 @@ public:
 	bool RemoveMemoryByDefinition(const UShadowSlaveMemoryDefinition* MemoryDef);
 
 	/**
-	 * Explicit canon destruction of a Memory instance.
+	 * Explicit canon destruction of a Memory instance (ceases to exist).
 	 * Distinct from normal ownership removal; triggers destruction events.
 	 * Returns true if the Memory was found and destroyed.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
 	bool DestroyMemory(const FGuid& InstanceId);
+
+	/**
+	 * Explicit canon consumption of a Memory instance.
+	 * Validates consumable status on definition, unequips if needed, and removes from ownership.
+	 * Outputs the applied consumption effect.
+	 * Returns true if successfully consumed.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
+	bool ConsumeMemory(const FGuid& InstanceId, FShadowSlaveMemoryConsumptionEffect& OutEffectApplied);
 
 	/**
 	 * Empties all Memories held by this component, unequipping any active ones.
@@ -84,6 +100,7 @@ public:
 	/**
 	 * Equips or manifests a Memory instance by its unique InstanceId.
 	 * Respects component policy and definition exclusivity settings.
+	 * Does not automatically transition technical runtime State (decoupled).
 	 * Returns true if the Memory can be equipped and was successfully equipped.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Equipment")
@@ -91,6 +108,7 @@ public:
 
 	/**
 	 * Unequips or recalls a manifested Memory instance by its unique InstanceId.
+	 * Does not automatically transition technical runtime State (decoupled).
 	 * Returns true if the Memory was equipped and successfully unequipped.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Equipment")
@@ -99,8 +117,8 @@ public:
 	/* --- Runtime State --- */
 
 	/**
-	 * Updates the runtime state of an individual Memory instance.
-	 * Returns true if the instance was found and state updated.
+	 * Updates the technical runtime state of an individual Memory instance.
+	 * Returns true if the instance was found and state updated (or already in that state).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
 	bool SetMemoryState(const FGuid& InstanceId, EShadowSlaveMemoryState NewState);
@@ -110,6 +128,20 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
 	bool GetMemoryState(const FGuid& InstanceId, EShadowSlaveMemoryState& OutState) const;
+
+	/* --- Dynamic Instance Properties & Modification Hooks --- */
+
+	/** Sets an instance-level dynamic property on an owned Memory, broadcasting OnMemoryModified */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
+	bool SetMemoryDynamicProperty(const FGuid& InstanceId, FName Key, const FString& Value);
+
+	/** Retrieves an instance-level dynamic property from an owned Memory */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	bool GetMemoryDynamicProperty(const FGuid& InstanceId, FName Key, FString& OutValue) const;
+
+	/** Removes an instance-level dynamic property from an owned Memory */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Operations")
+	bool RemoveMemoryDynamicProperty(const FGuid& InstanceId, FName Key);
 
 	/* --- Memory Queries --- */
 
@@ -128,6 +160,10 @@ public:
 	/** Finds the first Memory matching MemoryDef; returns true and outputs the instance */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
 	bool FindMemoryByDefinition(const UShadowSlaveMemoryDefinition* MemoryDef, FShadowSlaveMemoryInstance& OutInstance) const;
+
+	/** Finds all Memory instances matching the given definition (supports multiple distinct instances of same definition) */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	TArray<FShadowSlaveMemoryInstance> FindAllMemoriesByDefinition(const UShadowSlaveMemoryDefinition* MemoryDef) const;
 
 	/** Returns whether the Memory associated with InstanceId is currently equipped */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
@@ -153,9 +189,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
 	TArray<FShadowSlaveMemoryInstance> GetMemoriesByTier(EShadowSlaveMemoryTier Tier) const;
 
+	/** Returns all Memories that have a verified/known canon Rank */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	TArray<FShadowSlaveMemoryInstance> GetMemoriesWithKnownRank() const;
+
+	/** Returns all Memories that have a verified/known canon Tier */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	TArray<FShadowSlaveMemoryInstance> GetMemoriesWithKnownTier() const;
+
 	/** Returns all Memories that are currently manifested or equipped */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
 	TArray<FShadowSlaveMemoryInstance> GetEquippedMemories() const;
+
+	/** Returns all currently equipped Memories bound to the specified equipment slot */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	TArray<FShadowSlaveMemoryInstance> GetEquippedMemoriesBySlot(EShadowSlaveEquipmentSlot Slot) const;
+
+	/** Finds the first equipped Memory in the designated equipment slot (returns false if none or Slot == None) */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	bool GetEquippedMemoryInSlot(EShadowSlaveEquipmentSlot Slot, FShadowSlaveMemoryInstance& OutInstance) const;
+
+	/** Returns whether the designated equipment slot currently has at least one equipped Memory */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memories|Queries")
+	bool IsSlotOccupied(EShadowSlaveEquipmentSlot Slot) const;
 
 	/* --- Consumption Hooks --- */
 
@@ -170,9 +226,11 @@ public:
 	/* --- Inventory Ecosystem Integration --- */
 
 	/**
-	 * Atomically transfers an owned Memory instance into an inventory component if an associated
-	 * item definition is configured. Removes the Memory from this component to ensure zero duplication.
-	 * Returns true if successfully transferred.
+	 * Safe ownership transfer boundary: transfers an owned Memory instance into an inventory component.
+	 * Requires the Memory Definition to configure a valid AssociatedItemDefinition.
+	 * If the item is accepted by TargetInventory without remainder, the Memory is removed from this component,
+	 * ensuring single authoritative ownership with zero duplication across systems.
+	 * If no AssociatedItemDefinition exists or TargetInventory is full, transfer fails safely and Memory remains owned.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memories|Integration")
 	bool TransferToInventory(const FGuid& InstanceId, UShadowSlaveInventoryComponent* TargetInventory, int32& OutRemainder);
@@ -205,10 +263,19 @@ public:
 	FOnMemoryDestroyedSignature OnMemoryDestroyed;
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
+	FOnMemoryConsumedSignature OnMemoryConsumed;
+
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
 	FOnMemoryEquippedSignature OnMemoryEquipped;
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
 	FOnMemoryUnequippedSignature OnMemoryUnequipped;
+
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
+	FOnMemoryTransferredSignature OnMemoryTransferred;
+
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
+	FOnMemoryModifiedSignature OnMemoryModified;
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Memories|Events")
 	FOnMemoryStateChangedSignature OnMemoryStateChanged;
