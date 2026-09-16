@@ -119,6 +119,10 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* InteractAction;
 
+	/** Dodge Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* DodgeAction;
+
 public:
 	AShadowSlavePlayerCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
@@ -151,6 +155,9 @@ protected:
 
 	/** Interact input handler */
 	void Interact();
+
+	/** Dodge input handler */
+	void Dodge();
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;

@@ -87,10 +87,14 @@ void UShadowSlaveAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	if (UShadowSlaveCombatComponent* CombatComp = Character->GetCombatComponent())
 	{
 		CurrentCombatState = CombatComp->GetCombatState();
+		bIsDodging = (CurrentCombatState == ECombatState::Dodging);
+		DodgeDirection = CombatComp->GetCurrentDodgeDirection();
 	}
 	else
 	{
 		CurrentCombatState = ECombatState::Neutral;
+		bIsDodging = false;
+		DodgeDirection = EDodgeDirection::Forward;
 	}
 }
 

@@ -97,6 +97,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Animation|Combat", meta = (AllowPrivateAccess = "true"))
 	ECombatState CurrentCombatState = ECombatState::Neutral;
 
+	/** True if the character is currently performing a dodge */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Animation|Combat", meta = (AllowPrivateAccess = "true"))
+	bool bIsDodging = false;
+
+	/** Direction of the active dodge for directional animation blending */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Animation|Combat", meta = (AllowPrivateAccess = "true"))
+	EDodgeDirection DodgeDirection = EDodgeDirection::Forward;
+
 public:
 	/** Returns cached owning character */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Animation")

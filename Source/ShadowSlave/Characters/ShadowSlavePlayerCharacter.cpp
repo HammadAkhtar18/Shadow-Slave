@@ -118,6 +118,12 @@ void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* Pla
 		{
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::Interact);
 		}
+
+		// Dodge
+		if (DodgeAction)
+		{
+			EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Started, this, &AShadowSlavePlayerCharacter::Dodge);
+		}
 	}
 	else
 	{
@@ -215,6 +221,14 @@ void AShadowSlavePlayerCharacter::Interact()
 	if (bCanMove && InteractionComponent)
 	{
 		InteractionComponent->TryInteract();
+	}
+}
+
+void AShadowSlavePlayerCharacter::Dodge()
+{
+	if (CombatComponent)
+	{
+		CombatComponent->RequestDodge();
 	}
 }
 

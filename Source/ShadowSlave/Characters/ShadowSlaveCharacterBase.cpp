@@ -174,8 +174,10 @@ bool AShadowSlaveCharacterBase::CanSprint() const
 		return false;
 	}
 
-	// Cannot sprint while attacking or stunned
-	if (CombatComponent && (CombatComponent->GetCombatState() == ECombatState::Attacking || CombatComponent->GetCombatState() == ECombatState::Stunned))
+	// Cannot sprint while attacking, dodging, or stunned
+	if (CombatComponent && (CombatComponent->GetCombatState() == ECombatState::Attacking ||
+		CombatComponent->GetCombatState() == ECombatState::Dodging ||
+		CombatComponent->GetCombatState() == ECombatState::Stunned))
 	{
 		return false;
 	}

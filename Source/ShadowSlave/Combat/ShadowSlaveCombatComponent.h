@@ -8,6 +8,7 @@
 #include "ShadowSlaveCombatComponent.generated.h"
 
 class ACharacter;
+class AShadowSlaveCharacterBase;
 class UShadowSlaveAttributeComponent;
 
 /**
@@ -113,6 +114,38 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat")
 	const FShadowSlaveAttackData& GetHeavyAttackData() const { return HeavyAttackData; }
 
+	/** Attempts to execute a dodge in the specified direction (or direction derived from character movement/facing) */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat|Dodge")
+	virtual bool RequestDodge(const FVector& Direction = FVector::ZeroVector);
+
+	/** Returns true if character can perform a dodge right now (grounded, sufficient stamina, valid combat state) */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dodge")
+	virtual bool CanPerformDodge() const;
+
+	/** Returns the active cardinal dodge direction */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dodge")
+	EDodgeDirection GetCurrentDodgeDirection() const { return CurrentDodgeCardinalDirection; }
+
+	/** Returns the active 2D dodge movement vector */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dodge")
+	FVector GetCurrentDodgeVector() const { return ActiveDodgeDirection; }
+
+	/** Returns current dodge configuration data */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dodge")
+	const FShadowSlaveDodgeData& GetDodgeData() const { return DodgeData; }
+
+	/** Sets dodge configuration data */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat|Dodge")
+	void SetDodgeData(const FShadowSlaveDodgeData& NewData) { DodgeData = NewData; }
+
+	/** Returns whether dodge requires character to be grounded */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Combat|Dodge")
+	bool IsDodgeGroundedOnly() const { return bRequireGrounded; }
+
+	/** Sets whether dodge requires character to be grounded */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Combat|Dodge")
+	void SetRequireGrounded(bool bRequire) { bRequireGrounded = bRequire; }
+
 	/* --- Delegates --- */
 
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
@@ -136,6 +169,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
 	FOnCombatDamageReceivedSignature OnDamageReceived;
 
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat|Dodge")
+	FOnDodgeStartedSignature OnDodgeStarted;
+
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat|Dodge")
+	FOnDodgeEndedSignature OnDodgeEnded;
+
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat|Dodge")
+	FOnDodgeRejectedSignature OnDodgeRejected;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -144,6 +186,27 @@ protected:
 
 	/** Internal handler bound to montage completion/interruption */
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	/** Executes physical launch, montage playback, and starts duration timer */
+	virtual void ExecuteDodge(const FVector& Direction);
+
+	/** Internal handler when dodge duration elapses */
+	void OnDodgeFinished();
+
+	/** Resolves input/movement/facing into a normalized 2D world direction vector */
+	FVector ResolveDodgeDirection(const FVector& InputDirection) const;
+
+	/** Determines cardinal direction relative to character facing */
+	EDodgeDirection CalculateDodgeCardinalDirection(const FVector& Direction) const;
+
+	/** Resolves the appropriate animation montage for the cardinal dodge direction */
+	UAnimMontage* GetDodgeMontageForDirection(EDodgeDirection Direction) const;
+
+	/** Applies dodge launch impulse and temporarily suppresses movement input */
+	void ApplyDodgeMovement(const FVector& Direction);
+
+	/** Restores character movement control after dodge finishes or cancels */
+	void RestoreDodgeMovement();
 
 protected:
 	/** Current state of the actor in combat */
@@ -157,6 +220,14 @@ protected:
 	/** Configuration for heavy attack */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Attacks")
 	FShadowSlaveAttackData HeavyAttackData;
+
+	/** Configuration for dodge actions */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dodge")
+	FShadowSlaveDodgeData DodgeData;
+
+	/** Whether dodge requires the character to be grounded on walkable surface */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Dodge")
+	bool bRequireGrounded = true;
 
 	/** Collision channel used for melee hit detection */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Combat|Detection")
@@ -190,6 +261,15 @@ private:
 	/** Re-entrancy guard flag to prevent recursive state transitions during callbacks or delegate broadcasts */
 	bool bIsTransitioningState = false;
 
+	/** Active 2D unit vector of the current dodge */
+	FVector ActiveDodgeDirection = FVector::ForwardVector;
+
+	/** Active cardinal direction of the current dodge */
+	EDodgeDirection CurrentDodgeCardinalDirection = EDodgeDirection::Forward;
+
+	/** Whether movement control was suppressed specifically by active dodge */
+	bool bMovementControlSuppressedByDodge = false;
+
 	/** Tracks hit counts per target actor during the current attack instance to enforce MaxHitsPerTarget */
 	TMap<TWeakObjectPtr<AActor>, int32> HitCountsThisAttack;
 
@@ -197,7 +277,8 @@ private:
 	FTimerHandle HitWindowTimerHandle;
 	FTimerHandle RecoveryTimerHandle;
 	FTimerHandle TraceLoopTimerHandle;
+	FTimerHandle DodgeTimerHandle;
 
 	/** Cached owning character reference */
-	TWeakObjectPtr<ACharacter> OwningCharacter;
+	TWeakObjectPtr<AShadowSlaveCharacterBase> OwningCharacter;
 };

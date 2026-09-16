@@ -3,7 +3,9 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Combat/ShadowSlaveDamageableInterface.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
+#include "Characters/ShadowSlaveCharacterBase.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -35,13 +37,18 @@ UShadowSlaveCombatComponent::UShadowSlaveCombatComponent()
 	HeavyAttackData.HitWindowDuration = 0.45f;
 	HeavyAttackData.RecoveryDuration = 0.35f;
 	HeavyAttackData.MaxHitsPerTarget = 1;
+
+	// Generic dodge configuration defaults (prototype tuning values, not novel canon)
+	DodgeData.StaminaCost = 20.0f;
+	DodgeData.DodgeDuration = 0.35f;
+	DodgeData.DodgeSpeed = 950.0f;
 }
 
 void UShadowSlaveCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	OwningCharacter = Cast<ACharacter>(GetOwner());
+	OwningCharacter = Cast<AShadowSlaveCharacterBase>(GetOwner());
 }
 
 bool UShadowSlaveCombatComponent::CanTransitionToState(ECombatState NewState) const
@@ -128,13 +135,18 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 	const EAttackType EndedAttackType = ActiveAttackData.AttackType;
 	const int32 EndedInstanceId = CurrentAttackInstanceId;
 
-	// Determine if an active attack montage should be halted.
-	// Normal transition to Recovering lets the montage follow-through play or blend out naturally.
+	// Determine if an active montage should be halted.
+	// Normal attack transition to Recovering lets the montage follow-through play or blend out naturally.
 	// Abrupt transitions (Stunned, Dodging, Dead, Neutral) immediately stop the active attack montage.
+	// Abrupt interruptions during Dodging (Stunned, Dead) immediately stop the active dodge montage.
 	UAnimMontage* MontageToStop = nullptr;
 	if (bWasAttacking && NewState != ECombatState::Recovering)
 	{
 		MontageToStop = ActiveAttackData.AttackMontage.Get();
+	}
+	else if (OldState == ECombatState::Dodging && (NewState == ECombatState::Stunned || NewState == ECombatState::Dead))
+	{
+		MontageToStop = GetDodgeMontageForDirection(CurrentDodgeCardinalDirection);
 	}
 	else if (NewState == ECombatState::Dead && ActiveAttackData.AttackMontage)
 	{
@@ -165,6 +177,14 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 			World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
 		}
 	}
+	else if (OldState == ECombatState::Dodging)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(DodgeTimerHandle);
+		}
+		RestoreDodgeMovement();
+	}
 
 	if (NewState == ECombatState::Dead)
 	{
@@ -177,6 +197,7 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 			World->GetTimerManager().ClearTimer(TraceLoopTimerHandle);
 			World->GetTimerManager().ClearTimer(HitWindowTimerHandle);
 			World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+			World->GetTimerManager().ClearTimer(DodgeTimerHandle);
 		}
 	}
 
@@ -199,10 +220,14 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 	// 4. Broadcast state change delegate
 	OnCombatStateChanged.Broadcast(OldState, NewState);
 
-	// 5. Broadcast OnAttackEnded exactly once whenever leaving the Attacking state
+	// 5. Broadcast end delegates whenever leaving Attacking or Dodging states
 	if (bWasAttacking)
 	{
 		OnAttackEnded.Broadcast(EndedAttackType, EndedInstanceId);
+	}
+	else if (OldState == ECombatState::Dodging)
+	{
+		OnDodgeEnded.Broadcast();
 	}
 
 	bIsTransitioningState = false;
@@ -577,5 +602,251 @@ UShadowSlaveAttributeComponent* UShadowSlaveCombatComponent::GetOwnerAttributeCo
 void UShadowSlaveCombatComponent::NotifyDamageReceived(const FShadowSlaveDamageInfo& DamageInfo)
 {
 	OnDamageReceived.Broadcast(DamageInfo);
+}
+
+bool UShadowSlaveCombatComponent::CanPerformDodge() const
+{
+	// Cannot dodge if already dodging or if transition to Dodging is disallowed
+	if (CurrentCombatState == ECombatState::Dodging)
+	{
+		return false;
+	}
+
+	if (!CanTransitionToState(ECombatState::Dodging))
+	{
+		return false;
+	}
+
+	if (!OwningCharacter.IsValid())
+	{
+		return false;
+	}
+
+	// Character must be alive
+	if (!OwningCharacter->IsAlive())
+	{
+		return false;
+	}
+
+	// Grounded check if configured
+	if (bRequireGrounded)
+	{
+		if (const UCharacterMovementComponent* MoveComp = OwningCharacter->GetCharacterMovement())
+		{
+			if (MoveComp->IsFalling())
+			{
+				return false;
+			}
+		}
+	}
+
+	// Authoritative stamina check against AttributeComponent if attached
+	if (const UShadowSlaveAttributeComponent* AttribComp = GetOwnerAttributeComponent())
+	{
+		if (AttribComp->GetCurrentStamina() < DodgeData.StaminaCost)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UShadowSlaveCombatComponent::RequestDodge(const FVector& Direction)
+{
+	if (!CanPerformDodge())
+	{
+		OnDodgeRejected.Broadcast();
+		return false;
+	}
+
+	// Authoritative stamina consumption via AttributeComponent
+	if (UShadowSlaveAttributeComponent* AttribComp = GetOwnerAttributeComponent())
+	{
+		if (!AttribComp->ConsumeStamina(DodgeData.StaminaCost))
+		{
+			OnDodgeRejected.Broadcast();
+			return false;
+		}
+	}
+
+	ExecuteDodge(Direction);
+	return true;
+}
+
+void UShadowSlaveCombatComponent::ExecuteDodge(const FVector& Direction)
+{
+	const FVector ResolvedDirection = ResolveDodgeDirection(Direction);
+	const EDodgeDirection CardinalDirection = CalculateDodgeCardinalDirection(ResolvedDirection);
+
+	ActiveDodgeDirection = ResolvedDirection;
+	CurrentDodgeCardinalDirection = CardinalDirection;
+
+	// Transition combat state to Dodging (abruptly interrupts active attack if currently attacking)
+	SetCombatState(ECombatState::Dodging);
+
+	// Apply physical launch impulse and temporarily suppress movement input
+	ApplyDodgeMovement(ResolvedDirection);
+
+	// Play directional dodge animation montage if available
+	UAnimMontage* DodgeMontage = GetDodgeMontageForDirection(CardinalDirection);
+	if (DodgeMontage && OwningCharacter.IsValid())
+	{
+		if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
+		{
+			if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+			{
+				AnimInstance->Montage_Play(DodgeMontage);
+			}
+		}
+	}
+
+	// Schedule dodge completion timer
+	if (DodgeData.DodgeDuration > 0.0f)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(DodgeTimerHandle, this, &UShadowSlaveCombatComponent::OnDodgeFinished, DodgeData.DodgeDuration, false);
+		}
+	}
+	else
+	{
+		OnDodgeFinished();
+	}
+
+	OnDodgeStarted.Broadcast(ResolvedDirection, CardinalDirection);
+}
+
+void UShadowSlaveCombatComponent::OnDodgeFinished()
+{
+	if (CurrentCombatState == ECombatState::Dodging)
+	{
+		SetCombatState(ECombatState::Neutral);
+	}
+}
+
+FVector UShadowSlaveCombatComponent::ResolveDodgeDirection(const FVector& InputDirection) const
+{
+	// 1. Explicit valid direction passed by caller (e.g. AI or directed input)
+	if (!InputDirection.IsNearlyZero())
+	{
+		const FVector Direction2D = FVector(InputDirection.X, InputDirection.Y, 0.0f).GetSafeNormal();
+		if (!Direction2D.IsNearlyZero())
+		{
+			return Direction2D;
+		}
+	}
+
+	if (!OwningCharacter.IsValid())
+	{
+		return FVector::ForwardVector;
+	}
+
+	// 2. Active movement input acceleration (e.g. player WASD / analog stick input)
+	if (const UCharacterMovementComponent* MoveComp = OwningCharacter->GetCharacterMovement())
+	{
+		const FVector Accel = MoveComp->GetCurrentAcceleration();
+		const FVector Accel2D = FVector(Accel.X, Accel.Y, 0.0f).GetSafeNormal();
+		if (!Accel2D.IsNearlyZero())
+		{
+			return Accel2D;
+		}
+	}
+
+	// 3. Current character movement velocity (preserves directional momentum)
+	const FVector Velocity = OwningCharacter->GetVelocity();
+	const FVector Velocity2D = FVector(Velocity.X, Velocity.Y, 0.0f).GetSafeNormal();
+	if (!Velocity2D.IsNearlyZero())
+	{
+		return Velocity2D;
+	}
+
+	// 4. Fall back to character forward facing vector
+	const FVector Forward = OwningCharacter->GetActorForwardVector();
+	const FVector Forward2D = FVector(Forward.X, Forward.Y, 0.0f).GetSafeNormal();
+	if (!Forward2D.IsNearlyZero())
+	{
+		return Forward2D;
+	}
+
+	return FVector::ForwardVector;
+}
+
+EDodgeDirection UShadowSlaveCombatComponent::CalculateDodgeCardinalDirection(const FVector& Direction) const
+{
+	if (!OwningCharacter.IsValid())
+	{
+		return EDodgeDirection::Forward;
+	}
+
+	const FVector ForwardVector = OwningCharacter->GetActorForwardVector().GetSafeNormal2D();
+	const FVector RightVector = OwningCharacter->GetActorRightVector().GetSafeNormal2D();
+	const FVector DodgeDir2D = Direction.GetSafeNormal2D();
+
+	const float ForwardDot = FVector::DotProduct(ForwardVector, DodgeDir2D);
+	const float RightDot = FVector::DotProduct(RightVector, DodgeDir2D);
+
+	// 45-degree angle threshold: cos(45 deg) ~= 0.7071f
+	if (ForwardDot >= 0.7071f)
+	{
+		return EDodgeDirection::Forward;
+	}
+	else if (ForwardDot <= -0.7071f)
+	{
+		return EDodgeDirection::Backward;
+	}
+	else if (RightDot > 0.0f)
+	{
+		return EDodgeDirection::Right;
+	}
+	else
+	{
+		return EDodgeDirection::Left;
+	}
+}
+
+UAnimMontage* UShadowSlaveCombatComponent::GetDodgeMontageForDirection(EDodgeDirection Direction) const
+{
+	switch (Direction)
+	{
+	case EDodgeDirection::Forward:
+		return DodgeData.DodgeForwardMontage.Get();
+	case EDodgeDirection::Backward:
+		return DodgeData.DodgeBackwardMontage.Get();
+	case EDodgeDirection::Left:
+		return DodgeData.DodgeLeftMontage.Get();
+	case EDodgeDirection::Right:
+		return DodgeData.DodgeRightMontage.Get();
+	default:
+		return DodgeData.DodgeForwardMontage.Get();
+	}
+}
+
+void UShadowSlaveCombatComponent::ApplyDodgeMovement(const FVector& Direction)
+{
+	if (!OwningCharacter.IsValid())
+	{
+		return;
+	}
+
+	// Temporarily suppress movement input during dodge impulse so input doesn't counteract launch velocity
+	OwningCharacter->SetMovementControlEnabled(false);
+	bMovementControlSuppressedByDodge = true;
+
+	// Launch character horizontally along dodge direction
+	const FVector LaunchVelocity = Direction * DodgeData.DodgeSpeed;
+	OwningCharacter->LaunchCharacter(LaunchVelocity, true, false);
+}
+
+void UShadowSlaveCombatComponent::RestoreDodgeMovement()
+{
+	if (bMovementControlSuppressedByDodge)
+	{
+		bMovementControlSuppressedByDodge = false;
+		if (OwningCharacter.IsValid() && OwningCharacter->IsAlive())
+		{
+			OwningCharacter->SetMovementControlEnabled(true);
+		}
+	}
 }
 

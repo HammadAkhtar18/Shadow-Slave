@@ -124,6 +124,55 @@ struct SHADOWSLAVE_API FShadowSlaveAttackData
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
 };
 
+/**
+ * Cardinal directions for dodge / evasion.
+ */
+UENUM(BlueprintType)
+enum class EDodgeDirection : uint8
+{
+	Forward UMETA(DisplayName = "Forward"),
+	Backward UMETA(DisplayName = "Backward"),
+	Left UMETA(DisplayName = "Left"),
+	Right UMETA(DisplayName = "Right")
+};
+
+/**
+ * Data-driven configuration for a dodge action.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveDodgeData
+{
+	GENERATED_BODY()
+
+	/** Stamina cost required to perform a dodge (authoritative check against AttributeComponent) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge", meta = (ClampMin = "0.0"))
+	float StaminaCost = 20.0f;
+
+	/** Duration of the dodge action in seconds */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge", meta = (ClampMin = "0.05"))
+	float DodgeDuration = 0.35f;
+
+	/** Horizontal impulse speed applied during dodge execution */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge", meta = (ClampMin = "0.0"))
+	float DodgeSpeed = 950.0f;
+
+	/** Optional animation montage for forward dodge */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge")
+	TObjectPtr<UAnimMontage> DodgeForwardMontage = nullptr;
+
+	/** Optional animation montage for backward dodge */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge")
+	TObjectPtr<UAnimMontage> DodgeBackwardMontage = nullptr;
+
+	/** Optional animation montage for left dodge */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge")
+	TObjectPtr<UAnimMontage> DodgeLeftMontage = nullptr;
+
+	/** Optional animation montage for right dodge */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat|Dodge")
+	TObjectPtr<UAnimMontage> DodgeRightMontage = nullptr;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCombatStateChangedSignature, ECombatState, OldState, ECombatState, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAttackExecutedSignature, EAttackType, AttackType);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAttackStartedSignature, EAttackType, AttackType, int32, AttackInstanceId);
@@ -131,3 +180,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAttackEndedSignature, EAttackTyp
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTargetHitSignature, AActor*, TargetActor, const FShadowSlaveDamageInfo&, DamageInfo);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDamageDealtSignature, const FShadowSlaveDamageInfo&, DamageInfo);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatDamageReceivedSignature, const FShadowSlaveDamageInfo&, DamageInfo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDodgeStartedSignature, const FVector&, DodgeDirection, EDodgeDirection, CardinalDirection);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDodgeEndedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDodgeRejectedSignature);
