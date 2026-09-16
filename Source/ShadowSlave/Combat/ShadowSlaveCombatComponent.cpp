@@ -103,6 +103,15 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 		return;
 	}
 
+	if (bIsTransitioningState)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveCombatComponent::SetCombatState - Recursive state transition rejected: %d -> %d on '%s'"),
+			static_cast<int32>(CurrentCombatState),
+			static_cast<int32>(NewState),
+			OwningCharacter.IsValid() ? *OwningCharacter->GetName() : TEXT("Unknown"));
+		return;
+	}
+
 	if (!CanTransitionToState(NewState))
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveCombatComponent::SetCombatState - Invalid state transition rejected: %d -> %d on '%s'"),
@@ -112,28 +121,41 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 		return;
 	}
 
-	const ECombatState OldState = CurrentCombatState;
+	bIsTransitioningState = true;
 
-	// State exit hooks
-	if (OldState == ECombatState::Attacking)
+	const ECombatState OldState = CurrentCombatState;
+	const bool bWasAttacking = (OldState == ECombatState::Attacking);
+	const EAttackType EndedAttackType = ActiveAttackData.AttackType;
+	const int32 EndedInstanceId = CurrentAttackInstanceId;
+
+	// Determine if an active attack montage should be halted.
+	// Normal transition to Recovering lets the montage follow-through play or blend out naturally.
+	// Abrupt transitions (Stunned, Dodging, Dead, Neutral) immediately stop the active attack montage.
+	UAnimMontage* MontageToStop = nullptr;
+	if (bWasAttacking && NewState != ECombatState::Recovering)
+	{
+		MontageToStop = ActiveAttackData.AttackMontage.Get();
+	}
+	else if (NewState == ECombatState::Dead && ActiveAttackData.AttackMontage)
+	{
+		MontageToStop = ActiveAttackData.AttackMontage.Get();
+	}
+
+	// 1. Clean up transient timers and hit window state
+	if (bWasAttacking)
 	{
 		bHitWindowActive = false;
+		bIsMontageDriven = false;
+
 		if (UWorld* World = GetWorld())
 		{
 			World->GetTimerManager().ClearTimer(TraceLoopTimerHandle);
 			World->GetTimerManager().ClearTimer(HitWindowTimerHandle);
 		}
 
-		// If leaving Attacking to Stunned, Dodging, or Neutral, halt active attack montage
-		if (NewState != ECombatState::Recovering && OwningCharacter.IsValid() && ActiveAttackData.AttackMontage)
+		if (NewState != ECombatState::Recovering)
 		{
-			if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
-			{
-				if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-				{
-					AnimInstance->Montage_Stop(0.1f, ActiveAttackData.AttackMontage);
-				}
-			}
+			HitCountsThisAttack.Empty();
 		}
 	}
 	else if (OldState == ECombatState::Recovering)
@@ -144,32 +166,46 @@ void UShadowSlaveCombatComponent::SetCombatState(ECombatState NewState)
 		}
 	}
 
-	// State enter hooks
 	if (NewState == ECombatState::Dead)
 	{
 		bHitWindowActive = false;
+		bIsMontageDriven = false;
 		HitCountsThisAttack.Empty();
+
 		if (UWorld* World = GetWorld())
 		{
 			World->GetTimerManager().ClearTimer(TraceLoopTimerHandle);
 			World->GetTimerManager().ClearTimer(HitWindowTimerHandle);
 			World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
 		}
+	}
 
-		if (OwningCharacter.IsValid() && ActiveAttackData.AttackMontage)
+	// 2. Commit authoritative state update FIRST, before any external callbacks or montage stops
+	CurrentCombatState = NewState;
+
+	// 3. Stop montage if requested. Any callback (e.g. HandleMontageEnded) will now see
+	// CurrentCombatState == NewState (!= Attacking) and safely no-op without re-entrancy.
+	if (MontageToStop && OwningCharacter.IsValid())
+	{
+		if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
 		{
-			if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
+			if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
 			{
-				if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-				{
-					AnimInstance->Montage_Stop(0.1f, ActiveAttackData.AttackMontage);
-				}
+				AnimInstance->Montage_Stop(0.1f, MontageToStop);
 			}
 		}
 	}
 
-	CurrentCombatState = NewState;
+	// 4. Broadcast state change delegate
 	OnCombatStateChanged.Broadcast(OldState, NewState);
+
+	// 5. Broadcast OnAttackEnded exactly once whenever leaving the Attacking state
+	if (bWasAttacking)
+	{
+		OnAttackEnded.Broadcast(EndedAttackType, EndedInstanceId);
+	}
+
+	bIsTransitioningState = false;
 }
 
 bool UShadowSlaveCombatComponent::CanPerformAttack(EAttackType AttackType) const
@@ -259,32 +295,7 @@ void UShadowSlaveCombatComponent::CancelAttack()
 		return;
 	}
 
-	bHitWindowActive = false;
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(TraceLoopTimerHandle);
-		World->GetTimerManager().ClearTimer(HitWindowTimerHandle);
-		World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
-	}
-
-	if (OwningCharacter.IsValid() && ActiveAttackData.AttackMontage)
-	{
-		if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
-		{
-			if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-			{
-				AnimInstance->Montage_Stop(0.1f, ActiveAttackData.AttackMontage);
-			}
-		}
-	}
-
-	const EAttackType CancelledAttackType = ActiveAttackData.AttackType;
-	const int32 CancelledInstanceId = CurrentAttackInstanceId;
-
-	HitCountsThisAttack.Empty();
 	SetCombatState(ECombatState::Neutral);
-	OnAttackEnded.Broadcast(CancelledAttackType, CancelledInstanceId);
 }
 
 void UShadowSlaveCombatComponent::OpenHitWindow()
@@ -322,12 +333,9 @@ void UShadowSlaveCombatComponent::CloseHitWindow()
 	// Transition to recovery if still in Attacking state
 	if (CurrentCombatState == ECombatState::Attacking)
 	{
-		const EAttackType EndedAttackType = ActiveAttackData.AttackType;
-		const int32 EndedInstanceId = CurrentAttackInstanceId;
 		const float RecoveryTime = ActiveAttackData.RecoveryDuration;
 
 		SetCombatState(ECombatState::Recovering);
-		OnAttackEnded.Broadcast(EndedAttackType, EndedInstanceId);
 
 		if (RecoveryTime > 0.0f)
 		{
@@ -345,16 +353,19 @@ void UShadowSlaveCombatComponent::CloseHitWindow()
 
 void UShadowSlaveCombatComponent::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-	if (Montage && Montage == ActiveAttackData.AttackMontage && CurrentCombatState == ECombatState::Attacking)
+	// Stale or unrelated callback check: must match active attack montage and component must be in Attacking state
+	if (!Montage || Montage != ActiveAttackData.AttackMontage || CurrentCombatState != ECombatState::Attacking)
 	{
-		if (bInterrupted)
-		{
-			CancelAttack();
-		}
-		else
-		{
-			CloseHitWindow();
-		}
+		return;
+	}
+
+	if (bInterrupted)
+	{
+		CancelAttack();
+	}
+	else
+	{
+		CloseHitWindow();
 	}
 }
 
@@ -471,27 +482,6 @@ const FShadowSlaveAttackData& UShadowSlaveCombatComponent::GetAttackData(EAttack
 
 void UShadowSlaveCombatComponent::HandleOwnerDeath()
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(TraceLoopTimerHandle);
-		World->GetTimerManager().ClearTimer(HitWindowTimerHandle);
-		World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
-	}
-
-	bHitWindowActive = false;
-	HitCountsThisAttack.Empty();
-
-	if (OwningCharacter.IsValid() && ActiveAttackData.AttackMontage)
-	{
-		if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
-		{
-			if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-			{
-				AnimInstance->Montage_Stop(0.1f, ActiveAttackData.AttackMontage);
-			}
-		}
-	}
-
 	SetCombatState(ECombatState::Dead);
 }
 
@@ -508,10 +498,6 @@ void UShadowSlaveCombatComponent::ResetToNeutral()
 	}
 	else if (CurrentCombatState == ECombatState::Recovering || CurrentCombatState == ECombatState::Dodging || CurrentCombatState == ECombatState::Stunned)
 	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
-		}
 		SetCombatState(ECombatState::Neutral);
 	}
 }

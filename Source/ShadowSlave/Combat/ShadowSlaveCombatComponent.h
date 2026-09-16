@@ -187,6 +187,9 @@ private:
 	/** True if the active attack is driven by montage anim notifies; false if using timer fallback */
 	bool bIsMontageDriven = false;
 
+	/** Re-entrancy guard flag to prevent recursive state transitions during callbacks or delegate broadcasts */
+	bool bIsTransitioningState = false;
+
 	/** Tracks hit counts per target actor during the current attack instance to enforce MaxHitsPerTarget */
 	TMap<TWeakObjectPtr<AActor>, int32> HitCountsThisAttack;
 
