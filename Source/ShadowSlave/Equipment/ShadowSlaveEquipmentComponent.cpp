@@ -83,6 +83,7 @@ UShadowSlaveMemoryComponent* UShadowSlaveEquipmentComponent::GetMemoryComponent(
 
 bool UShadowSlaveEquipmentComponent::EquipItem(const FGuid& InstanceId, EShadowSlaveEquipmentSlot Slot)
 {
+	// 1. Validation phase (no mutation of existing equipment)
 	if (!InstanceId.IsValid())
 	{
 		return false;
@@ -117,26 +118,69 @@ bool UShadowSlaveEquipmentComponent::EquipItem(const FGuid& InstanceId, EShadowS
 		return false;
 	}
 
-	// Idempotency check: already equipped in this exact slot
-	if (const FShadowSlaveEquippedItem* Existing = EquippedSlots.Find(TargetSlot))
+	// Validate attribute component availability if item grants modifiers
+	if (ItemInstance.ItemDefinition->GrantedModifiers.Num() > 0 && !GetAttributeComponent())
 	{
-		if (Existing->InstanceId == InstanceId && Existing->SourceType == EShadowSlaveEquipmentSourceType::Item)
+		UE_LOG(LogShadowSlave, Warning, TEXT("[EquipmentComponent] Cannot equip item '%s': Item grants modifiers but owner has no AttributeComponent"), *ItemInstance.ItemDefinition->DisplayName.ToString());
+		return false;
+	}
+
+	// Idempotency check: already equipped in this exact slot
+	if (const FShadowSlaveEquippedItem* ExistingInTarget = EquippedSlots.Find(TargetSlot))
+	{
+		if (ExistingInTarget->InstanceId == InstanceId && ExistingInTarget->SourceType == EShadowSlaveEquipmentSourceType::Item)
 		{
 			return true;
 		}
 	}
 
-	// If this instance is currently equipped in another slot, unequip it from that slot first
+	// Snapshot existing state for atomic transition & potential rollback
 	const EShadowSlaveEquipmentSlot ExistingSlot = GetSlotForInstance(InstanceId);
-	if (ExistingSlot != EShadowSlaveEquipmentSlot::None && ExistingSlot != TargetSlot)
+	const bool bHasExistingSlot = (ExistingSlot != EShadowSlaveEquipmentSlot::None && ExistingSlot != TargetSlot);
+	FShadowSlaveEquippedItem ExistingSlotOccupant;
+	if (bHasExistingSlot)
 	{
-		UnequipSlot(ExistingSlot);
+		ExistingSlotOccupant = EquippedSlots[ExistingSlot];
 	}
 
-	// If target slot is currently occupied by any item/Memory, unequip it first
-	if (IsSlotOccupied(TargetSlot))
+	const bool bTargetSlotOccupied = IsSlotOccupied(TargetSlot);
+	FShadowSlaveEquippedItem OldTargetOccupant;
+	if (bTargetSlotOccupied)
 	{
-		UnequipSlot(TargetSlot);
+		OldTargetOccupant = EquippedSlots[TargetSlot];
+	}
+
+	// 2. Establish new equipment modifiers
+	if (!ApplyModifiersForSource(InstanceId, ItemInstance.ItemDefinition->GrantedModifiers))
+	{
+		RemoveModifiersForSource(InstanceId);
+		return false;
+	}
+
+	// 3. New equipment established successfully: commit slot changes and retire old occupants
+	if (bHasExistingSlot)
+	{
+		EquippedSlots.Remove(ExistingSlot);
+		OnEquipmentItemUnequipped.Broadcast(ExistingSlot, ExistingSlotOccupant);
+		OnEquipmentSlotChanged.Broadcast(ExistingSlot);
+	}
+
+	if (bTargetSlotOccupied && OldTargetOccupant.InstanceId != InstanceId)
+	{
+		if (OldTargetOccupant.SourceType == EShadowSlaveEquipmentSourceType::Memory)
+		{
+			if (UShadowSlaveMemoryComponent* MemComp = GetMemoryComponent())
+			{
+				if (MemComp->IsMemoryEquipped(OldTargetOccupant.InstanceId))
+				{
+					TGuardValue<bool> SyncGuard(bIsSyncingWithMemoryComponent, true);
+					MemComp->UnequipMemory(OldTargetOccupant.InstanceId);
+				}
+			}
+		}
+
+		RemoveModifiersForSource(OldTargetOccupant.InstanceId);
+		OnEquipmentItemUnequipped.Broadcast(TargetSlot, OldTargetOccupant);
 	}
 
 	const FName DefId = ItemInstance.ItemDefinition->GetPrimaryAssetId().IsValid()
@@ -146,10 +190,6 @@ bool UShadowSlaveEquipmentComponent::EquipItem(const FGuid& InstanceId, EShadowS
 	FShadowSlaveEquippedItem NewEquipped(TargetSlot, EShadowSlaveEquipmentSourceType::Item, InstanceId, DefId);
 	EquippedSlots.Add(TargetSlot, NewEquipped);
 
-	// Apply granted modifiers transactionally
-	ApplyModifiersForSource(InstanceId, ItemInstance.ItemDefinition->GrantedModifiers);
-
-	// Broadcast events
 	OnEquipmentItemEquipped.Broadcast(TargetSlot, NewEquipped);
 	OnEquipmentSlotChanged.Broadcast(TargetSlot);
 	OnEquipmentChanged.Broadcast();
@@ -167,6 +207,7 @@ bool UShadowSlaveEquipmentComponent::EquipItemInstance(const FShadowSlaveItemIns
 
 bool UShadowSlaveEquipmentComponent::EquipMemory(const FGuid& InstanceId, EShadowSlaveEquipmentSlot Slot)
 {
+	// 1. Validation phase (no mutation of existing equipment)
 	if (!InstanceId.IsValid())
 	{
 		return false;
@@ -202,30 +243,48 @@ bool UShadowSlaveEquipmentComponent::EquipMemory(const FGuid& InstanceId, EShado
 		return false;
 	}
 
-	// Idempotency check: already equipped in this exact slot
-	if (const FShadowSlaveEquippedItem* Existing = EquippedSlots.Find(TargetSlot))
+	// Validate attribute component availability if Memory grants modifiers
+	if (MemInstance.MemoryDefinition->GrantedModifiers.Num() > 0 && !GetAttributeComponent())
 	{
-		if (Existing->InstanceId == InstanceId && Existing->SourceType == EShadowSlaveEquipmentSourceType::Memory)
+		UE_LOG(LogShadowSlave, Warning, TEXT("[EquipmentComponent] Cannot equip Memory '%s': Memory grants modifiers but owner has no AttributeComponent"), *MemInstance.MemoryDefinition->DisplayName.ToString());
+		return false;
+	}
+
+	// Idempotency check: already equipped in this exact slot
+	if (const FShadowSlaveEquippedItem* ExistingInTarget = EquippedSlots.Find(TargetSlot))
+	{
+		if (ExistingInTarget->InstanceId == InstanceId && ExistingInTarget->SourceType == EShadowSlaveEquipmentSourceType::Memory)
 		{
 			return true;
 		}
 	}
 
-	// If this instance is currently equipped in another slot, unequip it from that slot first
+	// Snapshot existing state for atomic transition & potential rollback
 	const EShadowSlaveEquipmentSlot ExistingSlot = GetSlotForInstance(InstanceId);
-	if (ExistingSlot != EShadowSlaveEquipmentSlot::None && ExistingSlot != TargetSlot)
+	const bool bHasExistingSlot = (ExistingSlot != EShadowSlaveEquipmentSlot::None && ExistingSlot != TargetSlot);
+	FShadowSlaveEquippedItem ExistingSlotOccupant;
+	if (bHasExistingSlot)
 	{
-		UnequipSlot(ExistingSlot);
+		ExistingSlotOccupant = EquippedSlots[ExistingSlot];
 	}
 
-	// If target slot is currently occupied by any item/Memory, unequip it first
-	if (IsSlotOccupied(TargetSlot))
+	const bool bTargetSlotOccupied = IsSlotOccupied(TargetSlot);
+	FShadowSlaveEquippedItem OldTargetOccupant;
+	bool bOldMemoryWasEquippedInMemComp = false;
+	if (bTargetSlotOccupied)
 	{
-		UnequipSlot(TargetSlot);
+		OldTargetOccupant = EquippedSlots[TargetSlot];
+		if (OldTargetOccupant.SourceType == EShadowSlaveEquipmentSourceType::Memory)
+		{
+			bOldMemoryWasEquippedInMemComp = MemComp->IsMemoryEquipped(OldTargetOccupant.InstanceId);
+		}
 	}
 
-	// Ensure MemoryComponent marks this Memory as equipped
-	if (!MemComp->IsMemoryEquipped(InstanceId))
+	const bool bNewMemoryAlreadyEquippedInMemComp = MemComp->IsMemoryEquipped(InstanceId);
+
+	// 2. Synchronize with MemoryComponent
+	bool bMemoryEquippedInMemCompByUs = false;
+	if (!bNewMemoryAlreadyEquippedInMemComp)
 	{
 		TGuardValue<bool> SyncGuard(bIsSyncingWithMemoryComponent, true);
 		if (!MemComp->EquipMemory(InstanceId))
@@ -233,6 +292,51 @@ bool UShadowSlaveEquipmentComponent::EquipMemory(const FGuid& InstanceId, EShado
 			UE_LOG(LogShadowSlave, Warning, TEXT("[EquipmentComponent] MemoryComponent rejected equip for Memory '%s'"), *InstanceId.ToString(EGuidFormats::Short));
 			return false;
 		}
+		bMemoryEquippedInMemCompByUs = true;
+	}
+
+	// 3. Establish new equipment modifiers
+	if (!ApplyModifiersForSource(InstanceId, MemInstance.MemoryDefinition->GrantedModifiers))
+	{
+		// Rollback MemoryComponent synchronization for new memory
+		if (bMemoryEquippedInMemCompByUs)
+		{
+			TGuardValue<bool> SyncGuard(bIsSyncingWithMemoryComponent, true);
+			MemComp->UnequipMemory(InstanceId);
+		}
+
+		// If MemoryComponent automatically unequipped the old memory due to slot conflict, restore it
+		if (bTargetSlotOccupied && OldTargetOccupant.SourceType == EShadowSlaveEquipmentSourceType::Memory && bOldMemoryWasEquippedInMemComp && !MemComp->IsMemoryEquipped(OldTargetOccupant.InstanceId))
+		{
+			TGuardValue<bool> SyncGuard(bIsSyncingWithMemoryComponent, true);
+			MemComp->EquipMemory(OldTargetOccupant.InstanceId);
+		}
+
+		RemoveModifiersForSource(InstanceId);
+		return false;
+	}
+
+	// 4. New equipment established successfully: commit slot changes and retire old occupants
+	if (bHasExistingSlot)
+	{
+		EquippedSlots.Remove(ExistingSlot);
+		OnEquipmentItemUnequipped.Broadcast(ExistingSlot, ExistingSlotOccupant);
+		OnEquipmentSlotChanged.Broadcast(ExistingSlot);
+	}
+
+	if (bTargetSlotOccupied && OldTargetOccupant.InstanceId != InstanceId)
+	{
+		if (OldTargetOccupant.SourceType == EShadowSlaveEquipmentSourceType::Memory)
+		{
+			if (MemComp->IsMemoryEquipped(OldTargetOccupant.InstanceId))
+			{
+				TGuardValue<bool> SyncGuard(bIsSyncingWithMemoryComponent, true);
+				MemComp->UnequipMemory(OldTargetOccupant.InstanceId);
+			}
+		}
+
+		RemoveModifiersForSource(OldTargetOccupant.InstanceId);
+		OnEquipmentItemUnequipped.Broadcast(TargetSlot, OldTargetOccupant);
 	}
 
 	const FName DefId = MemInstance.MemoryDefinition->MemoryId != NAME_None
@@ -242,10 +346,6 @@ bool UShadowSlaveEquipmentComponent::EquipMemory(const FGuid& InstanceId, EShado
 	FShadowSlaveEquippedItem NewEquipped(TargetSlot, EShadowSlaveEquipmentSourceType::Memory, InstanceId, DefId);
 	EquippedSlots.Add(TargetSlot, NewEquipped);
 
-	// Apply granted modifiers transactionally
-	ApplyModifiersForSource(InstanceId, MemInstance.MemoryDefinition->GrantedModifiers);
-
-	// Broadcast events
 	OnEquipmentItemEquipped.Broadcast(TargetSlot, NewEquipped);
 	OnEquipmentSlotChanged.Broadcast(TargetSlot);
 	OnEquipmentChanged.Broadcast();
@@ -416,17 +516,23 @@ bool UShadowSlaveEquipmentComponent::GetEquippedMemoryInstance(EShadowSlaveEquip
 	return false;
 }
 
-void UShadowSlaveEquipmentComponent::ApplyModifiersForSource(const FGuid& SourceId, const TArray<FAttributeModifier>& Modifiers)
+bool UShadowSlaveEquipmentComponent::ApplyModifiersForSource(const FGuid& SourceId, const TArray<FAttributeModifier>& Modifiers)
 {
-	if (!SourceId.IsValid() || Modifiers.Num() == 0)
+	if (!SourceId.IsValid())
 	{
-		return;
+		return false;
+	}
+
+	if (Modifiers.Num() == 0)
+	{
+		return true;
 	}
 
 	UShadowSlaveAttributeComponent* AttrComp = GetAttributeComponent();
 	if (!AttrComp)
 	{
-		return;
+		UE_LOG(LogShadowSlave, Warning, TEXT("[EquipmentComponent] ApplyModifiersForSource failed: Owner '%s' has no AttributeComponent"), *GetNameSafe(GetOwner()));
+		return false;
 	}
 
 	// Remove any existing modifiers with this SourceId to prevent duplicate application
@@ -445,6 +551,8 @@ void UShadowSlaveEquipmentComponent::ApplyModifiersForSource(const FGuid& Source
 
 		AttrComp->AddModifier(AppliedMod);
 	}
+
+	return true;
 }
 
 void UShadowSlaveEquipmentComponent::RemoveModifiersForSource(const FGuid& SourceId)

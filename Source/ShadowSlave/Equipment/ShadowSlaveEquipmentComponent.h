@@ -146,8 +146,8 @@ protected:
 	/** Unbinds dynamic event listeners from companion components */
 	void UnbindFromCompanionComponents();
 
-	/** Applies attribute modifiers for an equipped source instance */
-	void ApplyModifiersForSource(const FGuid& SourceId, const TArray<FAttributeModifier>& Modifiers);
+	/** Applies attribute modifiers for an equipped source instance; returns true on success */
+	bool ApplyModifiersForSource(const FGuid& SourceId, const TArray<FAttributeModifier>& Modifiers);
 
 	/** Removes all attribute modifiers originating from a source instance */
 	void RemoveModifiersForSource(const FGuid& SourceId);
