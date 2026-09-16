@@ -39,6 +39,8 @@ void AShadowSlaveCharacterBase::BeginPlay()
 	Super::BeginPlay();
 
 	bIsAlive = true;
+	MovementSuppressionSources.Empty();
+	UpdateMovementControlState();
 
 	ApplyLocomotionSettings();
 	InitializeAttributes();
@@ -210,7 +212,26 @@ void AShadowSlaveCharacterBase::StopSprint()
 
 void AShadowSlaveCharacterBase::SetMovementControlEnabled(bool bEnabled)
 {
-	bCanMove = bEnabled;
+	SetMovementControlSuppressed(TEXT("Manual"), !bEnabled);
+}
+
+void AShadowSlaveCharacterBase::SetMovementControlSuppressed(FName Source, bool bSuppressed)
+{
+	if (bSuppressed)
+	{
+		MovementSuppressionSources.Add(Source);
+	}
+	else
+	{
+		MovementSuppressionSources.Remove(Source);
+	}
+
+	UpdateMovementControlState();
+}
+
+void AShadowSlaveCharacterBase::UpdateMovementControlState()
+{
+	bCanMove = (MovementSuppressionSources.Num() == 0) && bIsAlive;
 	if (!bCanMove)
 	{
 		StopSprint();
@@ -241,7 +262,7 @@ void AShadowSlaveCharacterBase::OnDamaged(const FShadowSlaveDamageInfo& DamageIn
 void AShadowSlaveCharacterBase::HandleDeath()
 {
 	bIsAlive = false;
-	SetMovementControlEnabled(false);
+	SetMovementControlSuppressed(TEXT("Death"), true);
 
 	if (CombatComponent)
 	{

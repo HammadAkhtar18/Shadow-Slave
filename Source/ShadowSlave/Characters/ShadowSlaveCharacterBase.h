@@ -81,6 +81,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Locomotion")
 	virtual void SetMovementControlEnabled(bool bEnabled);
 
+	/** Sets movement control suppression for a specific named source (e.g. "Dodge", "Death") */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Locomotion")
+	virtual void SetMovementControlSuppressed(FName Source, bool bSuppressed);
+
+	/** Returns whether movement control is currently suppressed by a specific source */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Locomotion")
+	bool IsMovementControlSuppressedBy(FName Source) const { return MovementSuppressionSources.Contains(Source); }
+
 	/** Returns whether movement control is enabled */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Locomotion")
 	bool IsMovementControlEnabled() const { return bCanMove; }
@@ -136,6 +144,13 @@ protected:
 	/** Callback when attribute component broadcasts health changes */
 	UFUNCTION()
 	virtual void HandleAttributeHealthChanged(float NewHealth, float MaxHealth);
+
+	/** Updates bCanMove from active suppression sources and alive status */
+	virtual void UpdateMovementControlState();
+
+	/** Active named systems currently suppressing movement control */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Locomotion")
+	TSet<FName> MovementSuppressionSources;
 
 	/** Controls whether movement input is accepted */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Locomotion")

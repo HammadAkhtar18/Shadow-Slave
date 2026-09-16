@@ -606,6 +606,12 @@ void UShadowSlaveCombatComponent::NotifyDamageReceived(const FShadowSlaveDamageI
 
 bool UShadowSlaveCombatComponent::CanPerformDodge() const
 {
+	// Cannot initiate dodge if currently in a state transition (re-entrancy guard)
+	if (bIsTransitioningState)
+	{
+		return false;
+	}
+
 	// Cannot dodge if already dodging or if transition to Dodging is disallowed
 	if (CurrentCombatState == ECombatState::Dodging)
 	{
@@ -654,36 +660,64 @@ bool UShadowSlaveCombatComponent::CanPerformDodge() const
 
 bool UShadowSlaveCombatComponent::RequestDodge(const FVector& Direction)
 {
+	// 1. Pre-validation: verify state transition legality, grounded, alive, re-entrancy guard, stamina sufficiency
 	if (!CanPerformDodge())
 	{
 		OnDodgeRejected.Broadcast();
 		return false;
 	}
 
-	// Authoritative stamina consumption via AttributeComponent
-	if (UShadowSlaveAttributeComponent* AttribComp = GetOwnerAttributeComponent())
+	UShadowSlaveAttributeComponent* AttribComp = GetOwnerAttributeComponent();
+
+	// 2. Consume stamina only as part of committing the dodge.
+	// If stamina consumption fails, combat state remains completely unchanged.
+	bool bStaminaSpent = false;
+	if (AttribComp)
 	{
 		if (!AttribComp->ConsumeStamina(DodgeData.StaminaCost))
 		{
 			OnDodgeRejected.Broadcast();
 			return false;
 		}
+		bStaminaSpent = true;
 	}
 
+	// 3. Commit state transition to Dodging
+	SetCombatState(ECombatState::Dodging);
+
+	// 4. Verify that state entry actually succeeded!
+	if (CurrentCombatState != ECombatState::Dodging)
+	{
+		// State transition was rejected (e.g. re-entrancy guard or external state interruption).
+		// Refund spent stamina so a rejected dodge never spends stamina!
+		if (bStaminaSpent && AttribComp)
+		{
+			AttribComp->RestoreStamina(DodgeData.StaminaCost);
+		}
+
+		OnDodgeRejected.Broadcast();
+		return false;
+	}
+
+	// 5. Authoritatively in Dodging state with stamina consumed.
+	// Execute movement launch, animation montage, duration timer, and OnDodgeStarted broadcast.
 	ExecuteDodge(Direction);
 	return true;
 }
 
 void UShadowSlaveCombatComponent::ExecuteDodge(const FVector& Direction)
 {
+	// Invariant: No successful dodge side effects unless CurrentCombatState == ECombatState::Dodging
+	if (CurrentCombatState != ECombatState::Dodging)
+	{
+		return;
+	}
+
 	const FVector ResolvedDirection = ResolveDodgeDirection(Direction);
 	const EDodgeDirection CardinalDirection = CalculateDodgeCardinalDirection(ResolvedDirection);
 
 	ActiveDodgeDirection = ResolvedDirection;
 	CurrentDodgeCardinalDirection = CardinalDirection;
-
-	// Transition combat state to Dodging (abruptly interrupts active attack if currently attacking)
-	SetCombatState(ECombatState::Dodging);
 
 	// Apply physical launch impulse and temporarily suppress movement input
 	ApplyDodgeMovement(ResolvedDirection);
@@ -830,7 +864,7 @@ void UShadowSlaveCombatComponent::ApplyDodgeMovement(const FVector& Direction)
 	}
 
 	// Temporarily suppress movement input during dodge impulse so input doesn't counteract launch velocity
-	OwningCharacter->SetMovementControlEnabled(false);
+	OwningCharacter->SetMovementControlSuppressed(TEXT("Dodge"), true);
 	bMovementControlSuppressedByDodge = true;
 
 	// Launch character horizontally along dodge direction
@@ -843,9 +877,9 @@ void UShadowSlaveCombatComponent::RestoreDodgeMovement()
 	if (bMovementControlSuppressedByDodge)
 	{
 		bMovementControlSuppressedByDodge = false;
-		if (OwningCharacter.IsValid() && OwningCharacter->IsAlive())
+		if (OwningCharacter.IsValid())
 		{
-			OwningCharacter->SetMovementControlEnabled(true);
+			OwningCharacter->SetMovementControlSuppressed(TEXT("Dodge"), false);
 		}
 	}
 }
