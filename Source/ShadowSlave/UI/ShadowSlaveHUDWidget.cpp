@@ -11,6 +11,7 @@
 #include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Interaction/ShadowSlaveInteractionComponent.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
+#include "Combat/ShadowSlaveDamageableInterface.h"
 #include "Progression/ShadowSlaveProgressionComponent.h"
 #include "Aspects/ShadowSlaveAspectComponent.h"
 #include "Aspects/ShadowSlaveAspectDefinition.h"
@@ -327,7 +328,13 @@ void UShadowSlaveHUDWidget::HandleTargetHit(AActor* TargetActor, const FShadowSl
 {
 	if (CombatFeedback)
 	{
-		CombatFeedback->NotifyDamageDealt(TargetActor, DamageInfo.DamageAmount, false);
+		bool bIsFatal = false;
+		if (TargetActor && TargetActor->GetClass()->ImplementsInterface(UShadowSlaveDamageableInterface::StaticClass()))
+		{
+			bIsFatal = !IShadowSlaveDamageableInterface::Execute_IsAlive(TargetActor);
+		}
+
+		CombatFeedback->NotifyDamageDealt(TargetActor, DamageInfo.DamageAmount, bIsFatal);
 	}
 }
 

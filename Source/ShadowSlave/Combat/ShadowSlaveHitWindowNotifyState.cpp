@@ -43,3 +43,8 @@ void UAnimNotifyState_ShadowSlaveHitWindow::NotifyEnd(USkeletalMeshComponent* Me
 		}
 	}
 }
+
+FString UAnimNotifyState_ShadowSlaveHitWindow::GetNotifyName_Implementation() const
+{
+	return TEXT("Shadow Slave Melee Hit Window");
+}

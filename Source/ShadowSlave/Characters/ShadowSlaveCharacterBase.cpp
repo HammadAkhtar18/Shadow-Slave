@@ -80,6 +80,11 @@ float AShadowSlaveCharacterBase::TakeDamageCustom_Implementation(const FShadowSl
 	if (ActualDamage > 0.0f)
 	{
 		OnDamaged(DamageInfo);
+
+		if (CombatComponent)
+		{
+			CombatComponent->NotifyDamageReceived(DamageInfo);
+		}
 	}
 
 	return ActualDamage;

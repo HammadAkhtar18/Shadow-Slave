@@ -54,10 +54,31 @@ struct SHADOWSLAVE_API FShadowSlaveDamageInfo
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat")
 	FVector HitNormal = FVector::ZeroVector;
 
+	/** Normalized direction vector from attacker towards impact */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat")
+	FVector HitDirection = FVector::ZeroVector;
+
+	/** Unique runtime instance identifier of the attack that caused this damage */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Combat")
+	int32 AttackInstanceId = 0;
+
 	FShadowSlaveDamageInfo() = default;
 
-	FShadowSlaveDamageInfo(float InDamage, AActor* InAttacker, AActor* InCauser, const FVector& InLocation = FVector::ZeroVector, const FVector& InNormal = FVector::ZeroVector)
-		: DamageAmount(InDamage), Attacker(InAttacker), DamageCauser(InCauser), HitLocation(InLocation), HitNormal(InNormal)
+	FShadowSlaveDamageInfo(
+		float InDamage,
+		AActor* InAttacker,
+		AActor* InCauser,
+		const FVector& InLocation = FVector::ZeroVector,
+		const FVector& InNormal = FVector::ZeroVector,
+		const FVector& InDirection = FVector::ZeroVector,
+		int32 InAttackInstanceId = 0)
+		: DamageAmount(InDamage)
+		, Attacker(InAttacker)
+		, DamageCauser(InCauser)
+		, HitLocation(InLocation)
+		, HitNormal(InNormal)
+		, HitDirection(InDirection)
+		, AttackInstanceId(InAttackInstanceId)
 	{
 	}
 };
@@ -74,7 +95,7 @@ struct SHADOWSLAVE_API FShadowSlaveAttackData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat")
 	EAttackType AttackType = EAttackType::Light;
 
-	/** Base physical damage dealt by this attack */
+	/** Base physical damage dealt by this attack (prototype tuning value, not novel canon) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat", meta = (ClampMin = "0.0"))
 	float Damage = 25.0f;
 
@@ -94,6 +115,10 @@ struct SHADOWSLAVE_API FShadowSlaveAttackData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat", meta = (ClampMin = "0.0"))
 	float RecoveryDuration = 0.25f;
 
+	/** Maximum times this attack can damage the same target actor during a single attack instance (default 1) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat", meta = (ClampMin = "1"))
+	int32 MaxHitsPerTarget = 1;
+
 	/** Animation montage played for this attack */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Combat")
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
@@ -101,4 +126,8 @@ struct SHADOWSLAVE_API FShadowSlaveAttackData
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCombatStateChangedSignature, ECombatState, OldState, ECombatState, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAttackExecutedSignature, EAttackType, AttackType);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAttackStartedSignature, EAttackType, AttackType, int32, AttackInstanceId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAttackEndedSignature, EAttackType, AttackType, int32, AttackInstanceId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTargetHitSignature, AActor*, TargetActor, const FShadowSlaveDamageInfo&, DamageInfo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDamageDealtSignature, const FShadowSlaveDamageInfo&, DamageInfo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatDamageReceivedSignature, const FShadowSlaveDamageInfo&, DamageInfo);

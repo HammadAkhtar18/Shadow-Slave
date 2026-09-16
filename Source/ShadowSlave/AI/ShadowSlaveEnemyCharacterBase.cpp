@@ -92,7 +92,7 @@ void AShadowSlaveEnemyCharacterBase::PlayHitReaction(const FVector& HitNormal)
 
 	bIsStaggered = true;
 
-	if (CombatComponent && CombatComponent->GetCombatState() != ECombatState::Attacking)
+	if (CombatComponent)
 	{
 		CombatComponent->SetCombatState(ECombatState::Stunned);
 	}
