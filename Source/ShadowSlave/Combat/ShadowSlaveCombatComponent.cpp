@@ -735,7 +735,16 @@ void UShadowSlaveCombatComponent::ExecuteDodge(const FVector& Direction)
 		}
 	}
 
-	// Schedule dodge completion timer
+	// Broadcast OnDodgeStarted while authoritatively in Dodging state
+	OnDodgeStarted.Broadcast(ResolvedDirection, CardinalDirection);
+
+	// If a listener to OnDodgeStarted caused a state transition away from Dodging, do not schedule or finish
+	if (CurrentCombatState != ECombatState::Dodging)
+	{
+		return;
+	}
+
+	// Schedule dodge completion timer or finish immediately if non-positive duration
 	if (DodgeData.DodgeDuration > 0.0f)
 	{
 		if (UWorld* World = GetWorld())
@@ -747,8 +756,6 @@ void UShadowSlaveCombatComponent::ExecuteDodge(const FVector& Direction)
 	{
 		OnDodgeFinished();
 	}
-
-	OnDodgeStarted.Broadcast(ResolvedDirection, CardinalDirection);
 }
 
 void UShadowSlaveCombatComponent::OnDodgeFinished()
