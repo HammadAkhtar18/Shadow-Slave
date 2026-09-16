@@ -6,6 +6,7 @@
 #include "Engine/DataAsset.h"
 #include "Memories/ShadowSlaveMemoryTypes.h"
 #include "Items/ShadowSlaveItemTypes.h"
+#include "Attributes/ShadowSlaveAttributeTypes.h"
 #include "ShadowSlaveMemoryDefinition.generated.h"
 
 class UTexture2D;
@@ -63,6 +64,10 @@ public:
 	/** Whether equipping this Memory requires an exclusive claim over the designated EquipmentSlot */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Classification")
 	bool bRequiresExclusiveSlot = false;
+
+	/** Attribute modifiers granted while this Memory is manifested/equipped */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Equipment")
+	TArray<FAttributeModifier> GrantedModifiers;
 
 	/** Returns whether this Memory specifies an actual equipment slot (i.e. EquipmentSlot != None) */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memory|Classification")

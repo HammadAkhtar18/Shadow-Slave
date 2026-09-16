@@ -3,6 +3,7 @@
 #include "Characters/ShadowSlaveCharacterBase.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
+#include "Equipment/ShadowSlaveEquipmentComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionSystem.h"
@@ -32,6 +33,9 @@ AShadowSlaveCharacterBase::AShadowSlaveCharacterBase(const FObjectInitializer& O
 
 	// Create modular attribute component
 	AttributeComponent = CreateDefaultSubobject<UShadowSlaveAttributeComponent>(TEXT("AttributeComponent"));
+
+	// Create modular equipment component
+	EquipmentComponent = CreateDefaultSubobject<UShadowSlaveEquipmentComponent>(TEXT("EquipmentComponent"));
 }
 
 void AShadowSlaveCharacterBase::BeginPlay()

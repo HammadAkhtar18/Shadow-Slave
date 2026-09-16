@@ -210,6 +210,43 @@ bool UShadowSlaveInventoryComponent::FindItem(const UShadowSlaveItemDefinition* 
 	return false;
 }
 
+bool UShadowSlaveInventoryComponent::FindItemByInstanceId(const FGuid& InstanceId, FShadowSlaveItemInstance& OutInstance) const
+{
+	if (!InstanceId.IsValid())
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveItemInstance& Slot : Slots)
+	{
+		if (Slot.InstanceId == InstanceId)
+		{
+			OutInstance = Slot;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UShadowSlaveInventoryComponent::HasItemByInstanceId(const FGuid& InstanceId) const
+{
+	if (!InstanceId.IsValid())
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveItemInstance& Slot : Slots)
+	{
+		if (Slot.InstanceId == InstanceId)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 int32 UShadowSlaveInventoryComponent::GetTotalItemCount(const UShadowSlaveItemDefinition* ItemDef) const
 {
 	if (!ItemDef)

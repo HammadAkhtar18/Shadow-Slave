@@ -141,6 +141,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Attributes|Modifiers")
 	void RemoveModifiersFromSource(UObject* Source);
 
+	/** Removes all active modifiers originating from a specific source GUID */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Attributes|Modifiers")
+	void RemoveModifiersFromSourceId(const FGuid& SourceId);
+
+	/** Returns true if any active modifier originates from the specified source GUID */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes|Modifiers")
+	bool HasModifierFromSourceId(const FGuid& SourceId) const;
+
+	/** Returns all active modifiers currently applied */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes|Modifiers")
+	const TArray<FAttributeModifier>& GetActiveModifiers() const { return ActiveModifiers; }
+
 	/** Clears all active modifiers */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Attributes|Modifiers")
 	void ClearAllModifiers();

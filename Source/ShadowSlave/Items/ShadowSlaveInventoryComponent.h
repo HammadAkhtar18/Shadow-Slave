@@ -80,6 +80,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Inventory|Queries")
 	bool FindItem(const UShadowSlaveItemDefinition* ItemDef, FShadowSlaveItemInstance& OutInstance) const;
 
+	/** Finds an item instance by its unique InstanceId; returns true and outputs ItemInstance */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Inventory|Queries")
+	bool FindItemByInstanceId(const FGuid& InstanceId, FShadowSlaveItemInstance& OutInstance) const;
+
+	/** Returns true if an item instance with the given unique InstanceId exists */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Inventory|Queries")
+	bool HasItemByInstanceId(const FGuid& InstanceId) const;
+
 	/** Returns total count of ItemDef across all slots */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Inventory|Queries")
 	int32 GetTotalItemCount(const UShadowSlaveItemDefinition* ItemDef) const;

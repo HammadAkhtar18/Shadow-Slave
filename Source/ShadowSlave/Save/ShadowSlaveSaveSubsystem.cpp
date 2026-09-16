@@ -19,6 +19,7 @@
 #include "Items/ShadowSlaveItemDefinition.h"
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Memories/ShadowSlaveMemoryDefinition.h"
+#include "Equipment/ShadowSlaveEquipmentComponent.h"
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "ShadowSlave.h"
 
@@ -174,6 +175,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		{
 			CaptureMemories(Mem, SaveObject->MemoryData);
 		}
+
+		if (UShadowSlaveEquipmentComponent* Equip = PlayerPawn->FindComponentByClass<UShadowSlaveEquipmentComponent>())
+		{
+			CaptureEquipment(Equip, SaveObject->EquipmentData);
+		}
 	}
 
 	if (World)
@@ -206,16 +212,7 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		RestorePlayerTransform(PlayerPawn, SaveGame->PlayerTransform);
 	}
 
-	// 3. Attributes restoration
-	if (PlayerPawn && SaveGame->AttributeData.bIsValid)
-	{
-		if (UShadowSlaveAttributeComponent* Attr = PlayerPawn->FindComponentByClass<UShadowSlaveAttributeComponent>())
-		{
-			RestoreAttributes(Attr, SaveGame->AttributeData);
-		}
-	}
-
-	// 4. Progression restoration
+	// 3. Progression restoration
 	if (PlayerPawn && SaveGame->ProgressionData.bIsValid)
 	{
 		if (UShadowSlaveProgressionComponent* Prog = PlayerPawn->FindComponentByClass<UShadowSlaveProgressionComponent>())
@@ -224,7 +221,7 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		}
 	}
 
-	// 5. Aspect restoration
+	// 4. Aspect restoration
 	if (PlayerPawn && SaveGame->AspectData.bIsValid)
 	{
 		if (UShadowSlaveAspectComponent* Aspect = PlayerPawn->FindComponentByClass<UShadowSlaveAspectComponent>())
@@ -233,7 +230,7 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		}
 	}
 
-	// 6. Inventory restoration
+	// 5. Inventory restoration
 	if (PlayerPawn && SaveGame->InventoryData.bIsValid)
 	{
 		if (UShadowSlaveInventoryComponent* Inv = PlayerPawn->FindComponentByClass<UShadowSlaveInventoryComponent>())
@@ -242,7 +239,7 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		}
 	}
 
-	// 7. Memory collection restoration
+	// 6. Memory collection restoration
 	if (PlayerPawn && SaveGame->MemoryData.bIsValid)
 	{
 		if (UShadowSlaveMemoryComponent* Mem = PlayerPawn->FindComponentByClass<UShadowSlaveMemoryComponent>())
@@ -251,7 +248,25 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		}
 	}
 
-	// 8. World state restoration
+	// 7. Equipment restoration (references restored inventory & memories, applies modifiers)
+	if (PlayerPawn && SaveGame->EquipmentData.bIsValid)
+	{
+		if (UShadowSlaveEquipmentComponent* Equip = PlayerPawn->FindComponentByClass<UShadowSlaveEquipmentComponent>())
+		{
+			RestoreEquipment(Equip, SaveGame->EquipmentData);
+		}
+	}
+
+	// 8. Attributes restoration (restored after equipment so max attribute modifiers are active before clamping)
+	if (PlayerPawn && SaveGame->AttributeData.bIsValid)
+	{
+		if (UShadowSlaveAttributeComponent* Attr = PlayerPawn->FindComponentByClass<UShadowSlaveAttributeComponent>())
+		{
+			RestoreAttributes(Attr, SaveGame->AttributeData);
+		}
+	}
+
+	// 9. World state restoration
 	if (World && SaveGame->WorldData.bIsValid)
 	{
 		RestoreWorldState(World, SaveGame->WorldData);
@@ -532,6 +547,81 @@ void UShadowSlaveSaveSubsystem::RestoreMemories(UShadowSlaveMemoryComponent* Mem
 	}
 
 	MemComp->RestoreMemories(RestoredMemories);
+}
+
+void UShadowSlaveSaveSubsystem::CaptureEquipment(UShadowSlaveEquipmentComponent* EquipComp, FShadowSlaveEquipmentSaveData& OutData)
+{
+	if (!EquipComp)
+	{
+		OutData.bIsValid = false;
+		return;
+	}
+
+	OutData.EquippedSlots.Empty();
+
+	const TArray<FShadowSlaveEquippedItem> AllEquipped = EquipComp->GetAllEquippedItems();
+	for (const FShadowSlaveEquippedItem& Item : AllEquipped)
+	{
+		if (Item.IsValid())
+		{
+			FShadowSlaveEquippedSlotSaveData SlotSave(Item.Slot, Item.SourceType, Item.InstanceId, Item.DefinitionId);
+			OutData.EquippedSlots.Add(SlotSave);
+		}
+	}
+
+	OutData.bIsValid = true;
+}
+
+void UShadowSlaveSaveSubsystem::RestoreEquipment(UShadowSlaveEquipmentComponent* EquipComp, const FShadowSlaveEquipmentSaveData& InData)
+{
+	if (!EquipComp || !InData.bIsValid)
+	{
+		return;
+	}
+
+	// Ensure any active equipment or modifiers are cleanly cleared before restoration to avoid duplicates
+	EquipComp->UnequipAll();
+
+	for (const FShadowSlaveEquippedSlotSaveData& SlotSave : InData.EquippedSlots)
+	{
+		if (!SlotSave.InstanceId.IsValid() || SlotSave.Slot == EShadowSlaveEquipmentSlot::None)
+		{
+			continue;
+		}
+
+		if (SlotSave.SourceType == EShadowSlaveEquipmentSourceType::Item)
+		{
+			if (UShadowSlaveInventoryComponent* InvComp = EquipComp->GetInventoryComponent())
+			{
+				FShadowSlaveItemInstance FoundItem;
+				if (InvComp->FindItemByInstanceId(SlotSave.InstanceId, FoundItem))
+				{
+					EquipComp->EquipItem(SlotSave.InstanceId, SlotSave.Slot);
+				}
+				else
+				{
+					UE_LOG(LogShadowSlave, Warning, TEXT("RestoreEquipment: Saved equipped item instance '%s' not found in inventory."),
+						*SlotSave.InstanceId.ToString(EGuidFormats::Short));
+				}
+			}
+		}
+		else if (SlotSave.SourceType == EShadowSlaveEquipmentSourceType::Memory)
+		{
+			if (UShadowSlaveMemoryComponent* MemComp = EquipComp->GetMemoryComponent())
+			{
+				FShadowSlaveMemoryInstance FoundMem;
+				if (MemComp->FindMemory(SlotSave.InstanceId, FoundMem))
+				{
+					EquipComp->EquipMemory(SlotSave.InstanceId, SlotSave.Slot);
+				}
+				else
+				{
+					UE_LOG(LogShadowSlave, Warning, TEXT("RestoreEquipment: Saved equipped Memory instance '%s' not found in MemoryComponent."),
+						*SlotSave.InstanceId.ToString(EGuidFormats::Short));
+				}
+			}
+		}
+	}
 }
 
 void UShadowSlaveSaveSubsystem::CaptureWorldState(UWorld* World, FShadowSlaveWorldSaveData& OutData)

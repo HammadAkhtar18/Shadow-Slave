@@ -62,10 +62,14 @@ struct SHADOWSLAVE_API FAttributeModifier
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Attributes")
 	TWeakObjectPtr<UObject> Source = nullptr;
 
+	/** Unique stable identifier for struct-based or instance-based sources (e.g. Item or Memory InstanceId GUID) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Attributes")
+	FGuid SourceId = FGuid();
+
 	FAttributeModifier() = default;
 
-	FAttributeModifier(FName InId, EAttributeType InTarget, EAttributeModifierType InType, float InValue, float InDuration = 0.0f, UObject* InSource = nullptr)
-		: ModifierId(InId), TargetAttribute(InTarget), ModifierType(InType), Value(InValue), Duration(InDuration), Source(InSource)
+	FAttributeModifier(FName InId, EAttributeType InTarget, EAttributeModifierType InType, float InValue, float InDuration = 0.0f, UObject* InSource = nullptr, const FGuid& InSourceId = FGuid())
+		: ModifierId(InId), TargetAttribute(InTarget), ModifierType(InType), Value(InValue), Duration(InDuration), Source(InSource), SourceId(InSourceId)
 	{
 	}
 };

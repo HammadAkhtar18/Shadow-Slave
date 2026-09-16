@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Items/ShadowSlaveItemTypes.h"
+#include "Attributes/ShadowSlaveAttributeTypes.h"
 #include "ShadowSlaveItemDefinition.generated.h"
 
 class UTexture2D;
@@ -41,6 +42,10 @@ public:
 	/** Prepared equipment slot for future gear or Memories */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Item|Equipment")
 	EShadowSlaveEquipmentSlot EquipmentSlot = EShadowSlaveEquipmentSlot::None;
+
+	/** Attribute modifiers granted while this item is equipped */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Item|Equipment")
+	TArray<FAttributeModifier> GrantedModifiers;
 
 	/* --- Stacking & Rules --- */
 

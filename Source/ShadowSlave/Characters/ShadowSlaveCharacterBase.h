@@ -11,6 +11,7 @@
 
 class UShadowSlaveCombatComponent;
 class UShadowSlaveAttributeComponent;
+class UShadowSlaveEquipmentComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacterDamagedSignature, const FShadowSlaveDamageInfo&, DamageInfo);
@@ -109,6 +110,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Attributes")
 	UShadowSlaveAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
 
+	/** Returns the modular equipment component */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Equipment")
+	UShadowSlaveEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -137,6 +142,10 @@ protected:
 	/** Modular Attribute Component managing health, stamina, and essence */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Attributes", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveAttributeComponent> AttributeComponent;
+
+	/** Modular Equipment Component managing items and Memories across equipment slots */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveEquipmentComponent> EquipmentComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Character")
 	bool bIsAlive = true;

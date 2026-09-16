@@ -7,6 +7,7 @@
 #include "Aspects/ShadowSlaveAspectTypes.h"
 #include "Memories/ShadowSlaveMemoryTypes.h"
 #include "Items/ShadowSlaveItemTypes.h"
+#include "Equipment/ShadowSlaveEquipmentTypes.h"
 #include "ShadowSlaveSaveTypes.generated.h"
 
 /**
@@ -244,6 +245,53 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryCollectionSaveData
 	bool bIsValid = false;
 
 	FShadowSlaveMemoryCollectionSaveData() = default;
+};
+
+/**
+ * Serializable snapshot of an individual equipped slot.
+ * Preserves slot, source type (Item vs Memory), instance GUID, and definition ID.
+ * Does not duplicate the underlying item or Memory instance payload.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveEquippedSlotSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	EShadowSlaveEquipmentSlot Slot = EShadowSlaveEquipmentSlot::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	EShadowSlaveEquipmentSourceType SourceType = EShadowSlaveEquipmentSourceType::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FGuid InstanceId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FName DefinitionId = NAME_None;
+
+	FShadowSlaveEquippedSlotSaveData() = default;
+
+	FShadowSlaveEquippedSlotSaveData(EShadowSlaveEquipmentSlot InSlot, EShadowSlaveEquipmentSourceType InSourceType, const FGuid& InInstanceId, FName InDefId = NAME_None)
+		: Slot(InSlot), SourceType(InSourceType), InstanceId(InInstanceId), DefinitionId(InDefId)
+	{
+	}
+};
+
+/**
+ * Serializable snapshot of the equipment component.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveEquipmentSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	TArray<FShadowSlaveEquippedSlotSaveData> EquippedSlots;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	bool bIsValid = false;
+
+	FShadowSlaveEquipmentSaveData() = default;
 };
 
 /**

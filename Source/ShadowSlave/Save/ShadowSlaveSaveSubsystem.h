@@ -15,6 +15,7 @@ class UShadowSlaveProgressionComponent;
 class UShadowSlaveAspectComponent;
 class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
+class UShadowSlaveEquipmentComponent;
 class UShadowSlaveMemoryDefinition;
 class UShadowSlaveItemDefinition;
 class UShadowSlaveAspectDefinition;
@@ -111,6 +112,9 @@ public:
 
 	void CaptureMemories(UShadowSlaveMemoryComponent* MemComp, FShadowSlaveMemoryCollectionSaveData& OutData);
 	void RestoreMemories(UShadowSlaveMemoryComponent* MemComp, const FShadowSlaveMemoryCollectionSaveData& InData);
+
+	void CaptureEquipment(UShadowSlaveEquipmentComponent* EquipComp, FShadowSlaveEquipmentSaveData& OutData);
+	void RestoreEquipment(UShadowSlaveEquipmentComponent* EquipComp, const FShadowSlaveEquipmentSaveData& InData);
 
 	void CaptureWorldState(UWorld* World, FShadowSlaveWorldSaveData& OutData);
 	void RestoreWorldState(UWorld* World, const FShadowSlaveWorldSaveData& InData);

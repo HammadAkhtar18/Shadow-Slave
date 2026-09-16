@@ -294,6 +294,46 @@ void UShadowSlaveAttributeComponent::RemoveModifiersFromSource(UObject* Source)
 	}
 }
 
+void UShadowSlaveAttributeComponent::RemoveModifiersFromSourceId(const FGuid& SourceId)
+{
+	if (!SourceId.IsValid())
+	{
+		return;
+	}
+
+	TArray<FName> IdsToRemove;
+	for (const FAttributeModifier& Mod : ActiveModifiers)
+	{
+		if (Mod.SourceId == SourceId)
+		{
+			IdsToRemove.Add(Mod.ModifierId);
+		}
+	}
+
+	for (const FName& Id : IdsToRemove)
+	{
+		RemoveModifier(Id);
+	}
+}
+
+bool UShadowSlaveAttributeComponent::HasModifierFromSourceId(const FGuid& SourceId) const
+{
+	if (!SourceId.IsValid())
+	{
+		return false;
+	}
+
+	for (const FAttributeModifier& Mod : ActiveModifiers)
+	{
+		if (Mod.SourceId == SourceId)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void UShadowSlaveAttributeComponent::ClearAllModifiers()
 {
 	if (UWorld* World = GetWorld())
