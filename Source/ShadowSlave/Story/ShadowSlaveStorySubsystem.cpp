@@ -266,8 +266,24 @@ bool UShadowSlaveStorySubsystem::SetStoryState(FName StoryId, EShadowSlaveStoryS
 
 bool UShadowSlaveStorySubsystem::ResetStoryState(FName StoryId, EShadowSlaveStoryState ResetToState)
 {
-	if (StoryId.IsNone() || ResetToState == EShadowSlaveStoryState::Unknown)
+	if (StoryId.IsNone())
 	{
+		return false;
+	}
+
+	// Administrative reset API must ONLY allow Locked and Available
+	if (ResetToState != EShadowSlaveStoryState::Locked && ResetToState != EShadowSlaveStoryState::Available)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ResetStoryState - Rejected invalid reset target state %d for '%s' (only Locked and Available are permitted)."),
+			static_cast<uint8>(ResetToState), *StoryId.ToString());
+		return false;
+	}
+
+	// If resetting to Available, require prerequisites to be satisfied
+	if (ResetToState == EShadowSlaveStoryState::Available && !ArePrerequisitesSatisfied(StoryId))
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ResetStoryState - Cannot reset '%s' to Available because prerequisites are not satisfied."),
+			*StoryId.ToString());
 		return false;
 	}
 
@@ -277,8 +293,14 @@ bool UShadowSlaveStorySubsystem::ResetStoryState(FName StoryId, EShadowSlaveStor
 		if (RegisteredDefinitions.Contains(StoryId))
 		{
 			FShadowSlaveStoryRuntimeState NewEntry(StoryId, ResetToState);
+			NewEntry.CurrentStepId = NAME_None;
 			StoryRuntimeStates.Add(StoryId, NewEntry);
-			FoundState = StoryRuntimeStates.Find(StoryId);
+
+			if (!bIsRestoringState)
+			{
+				OnStoryStateChanged.Broadcast(StoryId, ResetToState, EShadowSlaveStoryState::Unknown);
+			}
+			return true;
 		}
 		else
 		{
@@ -340,8 +362,27 @@ bool UShadowSlaveStorySubsystem::SetCurrentStoryStep(FName StoryId, FName StepId
 	const FName OldStep = FoundState->CurrentStepId;
 	if (OldStep == StepId)
 	{
-		// Idempotent: identical step, no event emitted
+		// Idempotent: identical step, return true without broadcasting
 		return true;
+	}
+
+	// Resolve definition to validate non-None StepId
+	const UShadowSlaveStoryDefinition* StoryDef = GetStoryDefinition(StoryId);
+	if (!StoryDef)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::SetCurrentStoryStep - Missing story definition for '%s'"),
+			*StoryId.ToString());
+		return false;
+	}
+
+	if (!StepId.IsNone())
+	{
+		if (!StoryDef->StepIds.Contains(StepId))
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::SetCurrentStoryStep - StepId '%s' does not exist in definition '%s'"),
+				*StepId.ToString(), *StoryId.ToString());
+			return false;
+		}
 	}
 
 	FoundState->CurrentStepId = StepId;

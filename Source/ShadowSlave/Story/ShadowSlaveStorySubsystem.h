@@ -84,6 +84,8 @@ public:
 	/**
 	 * Explicit administrative reset API allowing any story (including terminal states)
 	 * to return to Locked or Available state.
+	 * Rejects Unknown, Active, Completed, Failed, and Skipped.
+	 * If resetting to Available, prerequisites must be satisfied.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Transitions")
 	bool ResetStoryState(FName StoryId, EShadowSlaveStoryState ResetToState = EShadowSlaveStoryState::Locked);
@@ -94,7 +96,10 @@ public:
 
 	/* --- Story Step Support --- */
 
-	/** Sets the current step ID on an Active story */
+	/**
+	 * Sets the current step ID on an Active story.
+	 * Requires the story definition to exist and the requested non-None StepId to exist in definition.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Steps")
 	bool SetCurrentStoryStep(FName StoryId, FName StepId);
 
