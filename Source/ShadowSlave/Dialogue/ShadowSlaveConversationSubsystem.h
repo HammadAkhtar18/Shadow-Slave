@@ -111,13 +111,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Dialogue|Evaluation")
 	bool EvaluateConditions(const TArray<FShadowSlaveDialogueCondition>& Conditions) const;
 
-	/** Executes an individual consequence */
+	/** Executes an individual consequence; returns true if successful */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Dialogue|Execution")
-	void ExecuteConsequence(const FShadowSlaveDialogueConsequence& Consequence);
+	bool ExecuteConsequence(const FShadowSlaveDialogueConsequence& Consequence);
 
-	/** Executes an array of consequences */
+	/** Executes an array of consequences; stops and returns false immediately if any consequence fails */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Dialogue|Execution")
-	void ExecuteConsequences(const TArray<FShadowSlaveDialogueConsequence>& Consequences);
+	bool ExecuteConsequences(const TArray<FShadowSlaveDialogueConsequence>& Consequences);
 
 	/* --- Runtime Variables & Flags --- */
 
@@ -177,8 +177,8 @@ public:
 	FOnDialogueEventTriggeredSignature OnDialogueEventTriggered;
 
 protected:
-	/** Transitions to and displays the designated dialogue node */
-	void DisplayNode(const FShadowSlaveDialogueNode& Node);
+	/** Transitions to and displays the designated dialogue node. Returns false if node consequences fail. */
+	bool DisplayNode(const FShadowSlaveDialogueNode& Node);
 
 	/** Resets conversation lifecycle state back to Inactive */
 	void ResetState();

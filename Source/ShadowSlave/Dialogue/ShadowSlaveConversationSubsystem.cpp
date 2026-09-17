@@ -125,20 +125,28 @@ bool UShadowSlaveConversationSubsystem::StartConversation(UShadowSlaveDialogueDe
 
 	OnConversationStarted.Broadcast(ActiveDialogueDef, InSpeaker, InInteractor);
 
-	DisplayNode(*StartNode);
+	const bool bDisplayed = DisplayNode(*StartNode);
 
 	bIsProcessingStep = false;
-	return true;
+	return bDisplayed;
 }
 
-void UShadowSlaveConversationSubsystem::DisplayNode(const FShadowSlaveDialogueNode& Node)
+bool UShadowSlaveConversationSubsystem::DisplayNode(const FShadowSlaveDialogueNode& Node)
 {
 	CurrentNodeId = Node.NodeId;
 	CurrentNode = Node;
-	CurrentState = EShadowSlaveConversationState::Displaying;
 
-	// Execute any node-level entry consequences
-	ExecuteConsequences(Node.NodeConsequences);
+	// Execute any node-level entry consequences; if any fail, abort node progression safely
+	if (!ExecuteConsequences(Node.NodeConsequences))
+	{
+		UE_LOG(LogShadowSlave, Error, TEXT("DisplayNode: Node-entry consequences failed on node '%s'; aborting conversation."),
+			*Node.NodeId.ToString());
+
+		AbortConversation();
+		return false;
+	}
+
+	CurrentState = EShadowSlaveConversationState::Displaying;
 
 	// Evaluate conditions for each choice to assemble available choices
 	CurrentAvailableChoices.Empty();
@@ -162,6 +170,8 @@ void UShadowSlaveConversationSubsystem::DisplayNode(const FShadowSlaveDialogueNo
 		// Leaf node without choices: remains Displaying until AdvanceConversation() or AbortConversation()
 		CurrentState = EShadowSlaveConversationState::Displaying;
 	}
+
+	return true;
 }
 
 bool UShadowSlaveConversationSubsystem::SelectChoice(int32 ChoiceIndex)
@@ -193,12 +203,22 @@ bool UShadowSlaveConversationSubsystem::SelectChoice(int32 ChoiceIndex)
 	}
 
 	bIsProcessingStep = true;
+
+	// Execute choice consequences; advance ONLY if ALL consequences succeed
+	if (!ExecuteConsequences(SelectedChoice.Consequences))
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("SelectChoice: One or more consequences failed for choice '%s'; conversation will not advance."),
+			*SelectedChoice.ChoiceId.ToString());
+
+		// Keep conversation in safe state (still waiting for choice)
+		CurrentState = EShadowSlaveConversationState::WaitingForChoice;
+		bIsProcessingStep = false;
+		return false;
+	}
+
 	CurrentState = EShadowSlaveConversationState::Advancing;
 
 	OnChoiceSelected.Broadcast(SelectedChoice, CurrentInteractorActor.Get());
-
-	// Execute choice consequences
-	ExecuteConsequences(SelectedChoice.Consequences);
 
 	// Transition to target node or complete
 	if (SelectedChoice.TargetNodeId.IsNone())
@@ -225,9 +245,9 @@ bool UShadowSlaveConversationSubsystem::SelectChoice(int32 ChoiceIndex)
 		return true;
 	}
 
-	DisplayNode(*TargetNode);
+	const bool bDisplayed = DisplayNode(*TargetNode);
 	bIsProcessingStep = false;
-	return true;
+	return bDisplayed;
 }
 
 bool UShadowSlaveConversationSubsystem::SelectChoiceById(FName ChoiceId)
@@ -380,11 +400,23 @@ bool UShadowSlaveConversationSubsystem::EvaluateCondition(const FShadowSlaveDial
 		break;
 
 	case EShadowSlaveDialogueConditionType::CharacterRank:
-		if (AActor* Interactor = CurrentInteractorActor.Get())
+		if (Condition.RequiredRank == EShadowSlaveCharacterRank::Unknown)
+		{
+			bResult = false;
+		}
+		else if (AActor* Interactor = CurrentInteractorActor.Get())
 		{
 			if (UShadowSlaveProgressionComponent* ProgComp = Interactor->FindComponentByClass<UShadowSlaveProgressionComponent>())
 			{
-				bResult = (static_cast<uint8>(ProgComp->GetCharacterRank()) >= static_cast<uint8>(Condition.RequiredRank));
+				const EShadowSlaveCharacterRank CurrentRank = ProgComp->GetCharacterRank();
+				if (CurrentRank == EShadowSlaveCharacterRank::Unknown)
+				{
+					bResult = false;
+				}
+				else
+				{
+					bResult = (static_cast<uint8>(CurrentRank) >= static_cast<uint8>(Condition.RequiredRank));
+				}
 			}
 			else
 			{
@@ -436,27 +468,29 @@ bool UShadowSlaveConversationSubsystem::EvaluateConditions(const TArray<FShadowS
 	return true;
 }
 
-void UShadowSlaveConversationSubsystem::ExecuteConsequence(const FShadowSlaveDialogueConsequence& Consequence)
+bool UShadowSlaveConversationSubsystem::ExecuteConsequence(const FShadowSlaveDialogueConsequence& Consequence)
 {
 	switch (Consequence.ConsequenceType)
 	{
 	case EShadowSlaveDialogueConsequenceType::None:
-		break;
+		return true;
 
 	case EShadowSlaveDialogueConsequenceType::SetFlag:
 		if (!Consequence.TargetKey.IsNone())
 		{
 			SetRuntimeFlag(Consequence.TargetKey, Consequence.BoolValue);
+			return true;
 		}
-		break;
+		return false;
 
 	case EShadowSlaveDialogueConsequenceType::ModifyNumeric:
 		if (!Consequence.TargetKey.IsNone())
 		{
 			const float CurrentVal = GetRuntimeNumericValue(Consequence.TargetKey, 0.0f);
 			SetRuntimeNumericValue(Consequence.TargetKey, CurrentVal + Consequence.NumericValue);
+			return true;
 		}
-		break;
+		return false;
 
 	case EShadowSlaveDialogueConsequenceType::GiveItem:
 		if (AActor* Interactor = CurrentInteractorActor.Get())
@@ -471,11 +505,25 @@ void UShadowSlaveConversationSubsystem::ExecuteConsequence(const FShadowSlaveDia
 
 				if (ItemDef)
 				{
-					InvComp->AddItemSimple(ItemDef, FMath::Max(1, Consequence.ItemQuantity));
+					const int32 QuantityToAdd = FMath::Max(1, Consequence.ItemQuantity);
+					int32 OutRemainder = 0;
+					const bool bAdded = InvComp->AddItem(ItemDef, QuantityToAdd, OutRemainder);
+					if (bAdded && OutRemainder == 0)
+					{
+						return true;
+					}
+
+					// Rollback any partial additions if inventory had partial capacity
+					const int32 PartialAdded = QuantityToAdd - OutRemainder;
+					if (PartialAdded > 0)
+					{
+						InvComp->RemoveItem(ItemDef, PartialAdded);
+					}
+					return false;
 				}
 			}
 		}
-		break;
+		return false;
 
 	case EShadowSlaveDialogueConsequenceType::RemoveItem:
 		if (AActor* Interactor = CurrentInteractorActor.Get())
@@ -490,30 +538,36 @@ void UShadowSlaveConversationSubsystem::ExecuteConsequence(const FShadowSlaveDia
 
 				if (ItemDef)
 				{
-					InvComp->RemoveItem(ItemDef, FMath::Max(1, Consequence.ItemQuantity));
+					const int32 QuantityToRemove = FMath::Max(1, Consequence.ItemQuantity);
+					return InvComp->RemoveItem(ItemDef, QuantityToRemove);
 				}
 			}
 		}
-		break;
+		return false;
 
 	case EShadowSlaveDialogueConsequenceType::TriggerEvent:
 		if (!Consequence.EventId.IsNone())
 		{
 			OnDialogueEventTriggered.Broadcast(Consequence.EventId, CurrentInteractorActor.Get(), CurrentSpeakerActor.Get());
+			return true;
 		}
-		break;
+		return false;
 
 	default:
-		break;
+		return false;
 	}
 }
 
-void UShadowSlaveConversationSubsystem::ExecuteConsequences(const TArray<FShadowSlaveDialogueConsequence>& Consequences)
+bool UShadowSlaveConversationSubsystem::ExecuteConsequences(const TArray<FShadowSlaveDialogueConsequence>& Consequences)
 {
 	for (const FShadowSlaveDialogueConsequence& Cons : Consequences)
 	{
-		ExecuteConsequence(Cons);
+		if (!ExecuteConsequence(Cons))
+		{
+			return false;
+		}
 	}
+	return true;
 }
 
 bool UShadowSlaveConversationSubsystem::GetRuntimeFlag(FName Key, bool DefaultValue) const
@@ -614,8 +668,7 @@ bool UShadowSlaveConversationSubsystem::RestoreConversationState(const FShadowSl
 
 	if (TargetNode)
 	{
-		DisplayNode(*TargetNode);
-		return true;
+		return DisplayNode(*TargetNode);
 	}
 
 	ResetState();
