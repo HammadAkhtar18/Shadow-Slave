@@ -51,7 +51,20 @@ struct SHADOWSLAVE_API FShadowSlaveInteractionResult
 	}
 };
 
+/**
+ * Operational runtime state for world pickup actors.
+ * Distinguishes available interactive pickups from consumed/inactive pickups,
+ * preventing double-acquisition and callback re-entrancy.
+ */
+UENUM(BlueprintType)
+enum class EShadowSlavePickupState : uint8
+{
+	Available UMETA(DisplayName = "Available"),
+	Consumed  UMETA(DisplayName = "Consumed")
+};
+
 /* --- Interaction Event Delegates --- */
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractionTargetChangedSignature, AActor*, NewTarget, AActor*, OldTarget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnInteractedSignature, AActor*, Interactor, AActor*, InteractableObject, const FShadowSlaveInteractionResult&, Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPickupStateChangedSignature, EShadowSlavePickupState, NewState, AActor*, Interactor);

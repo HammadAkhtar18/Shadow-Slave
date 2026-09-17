@@ -5,19 +5,32 @@
 
 AShadowSlavePickupActor::AShadowSlavePickupActor()
 {
+	PickupState = EShadowSlavePickupState::Available;
 	bIsCollected = false;
 	bDestroyOnPickup = true;
+	bIsProcessingAcquisition = false;
 	InteractionPrompt = FText::FromString(TEXT("Pick Up"));
 	InteractionPriority = 10; // Pickups typically take priority over background geometry
 }
 
 bool AShadowSlavePickupActor::CanInteract_Implementation(AActor* Interactor)
 {
-	return !bIsCollected && Super::CanInteract_Implementation(Interactor);
+	if (bIsProcessingAcquisition || PickupState != EShadowSlavePickupState::Available || bIsCollected)
+	{
+		return false;
+	}
+
+	return Super::CanInteract_Implementation(Interactor);
 }
 
 void AShadowSlavePickupActor::OnCollected(AActor* Interactor)
 {
+	if (PickupState == EShadowSlavePickupState::Consumed)
+	{
+		return;
+	}
+
+	PickupState = EShadowSlavePickupState::Consumed;
 	bIsCollected = true;
 	SetInteractionEnabled(false);
 
@@ -26,6 +39,9 @@ void AShadowSlavePickupActor::OnCollected(AActor* Interactor)
 		StaticMeshComponent->SetVisibility(false);
 		StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
+
+	OnPickupStateChanged.Broadcast(PickupState, Interactor);
+	OnPickupCollected.Broadcast(this, Interactor);
 
 	if (bDestroyOnPickup)
 	{
@@ -40,7 +56,8 @@ bool AShadowSlavePickupActor::CaptureSaveRecord_Implementation(FShadowSlaveWorld
 		return false;
 	}
 
-	OutRecord.CustomStateData.Add(TEXT("bIsCollected"), bIsCollected ? TEXT("1") : TEXT("0"));
+	OutRecord.CustomStateData.Add(TEXT("PickupState"), PickupState == EShadowSlavePickupState::Consumed ? TEXT("Consumed") : TEXT("Available"));
+	OutRecord.CustomStateData.Add(TEXT("bIsCollected"), (PickupState == EShadowSlavePickupState::Consumed || bIsCollected) ? TEXT("1") : TEXT("0"));
 	return true;
 }
 
@@ -51,17 +68,36 @@ bool AShadowSlavePickupActor::RestoreSaveRecord_Implementation(const FShadowSlav
 		return false;
 	}
 
-	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("bIsCollected")))
+	bool bShouldBeConsumed = false;
+	if (const FString* StateVal = InRecord.CustomStateData.Find(TEXT("PickupState")))
 	{
-		bIsCollected = (*Val == TEXT("1"));
-		if (bIsCollected)
+		bShouldBeConsumed = (*StateVal == TEXT("Consumed"));
+	}
+	else if (const FString* Val = InRecord.CustomStateData.Find(TEXT("bIsCollected")))
+	{
+		bShouldBeConsumed = (*Val == TEXT("1"));
+	}
+
+	if (bShouldBeConsumed)
+	{
+		PickupState = EShadowSlavePickupState::Consumed;
+		bIsCollected = true;
+		SetInteractionEnabled(false);
+		if (StaticMeshComponent)
 		{
-			SetInteractionEnabled(false);
-			if (StaticMeshComponent)
-			{
-				StaticMeshComponent->SetVisibility(false);
-				StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			}
+			StaticMeshComponent->SetVisibility(false);
+			StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+	else
+	{
+		PickupState = EShadowSlavePickupState::Available;
+		bIsCollected = false;
+		SetInteractionEnabled(true);
+		if (StaticMeshComponent)
+		{
+			StaticMeshComponent->SetVisibility(true);
+			StaticMeshComponent->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 		}
 	}
 

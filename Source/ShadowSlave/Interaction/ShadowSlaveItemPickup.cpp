@@ -59,6 +59,11 @@ FShadowSlaveInteractionResult AShadowSlaveItemPickup::ExecuteInteraction(AActor*
 		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Invalid interactor.")), InteractionId);
 	}
 
+	if (bIsProcessingAcquisition || PickupState != EShadowSlavePickupState::Available || bIsCollected)
+	{
+		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Pickup is not available.")), InteractionId);
+	}
+
 	if (!ItemDefinition || Quantity <= 0)
 	{
 		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Item definition is missing or invalid.")), InteractionId);
@@ -70,12 +75,15 @@ FShadowSlaveInteractionResult AShadowSlaveItemPickup::ExecuteInteraction(AActor*
 		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Interactor has no Inventory Component.")), InteractionId);
 	}
 
-	int32 OutRemainder = 0;
+	bIsProcessingAcquisition = true;
+
+	int32 OutRemainder = Quantity;
 	const bool bAdded = InventoryComp->AddItem(ItemDefinition, Quantity, OutRemainder);
 
 	if (!bAdded || OutRemainder == Quantity)
 	{
 		// Inventory is completely full; pickup remains in the world untouched
+		bIsProcessingAcquisition = false;
 		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Inventory is full.")), InteractionId);
 	}
 
@@ -83,11 +91,14 @@ FShadowSlaveInteractionResult AShadowSlaveItemPickup::ExecuteInteraction(AActor*
 	{
 		// Partial collection: update remaining quantity and keep pickup in world
 		Quantity = OutRemainder;
+		bIsProcessingAcquisition = false;
 		return FShadowSlaveInteractionResult::Success(FName(TEXT("ItemPartiallyAcquired")));
 	}
 
 	// Full collection confirmed by inventory system; consume and remove pickup
+	Quantity = 0;
 	OnCollected(Interactor);
+	bIsProcessingAcquisition = false;
 	return FShadowSlaveInteractionResult::Success(FName(TEXT("ItemAcquired")));
 }
 
@@ -99,6 +110,10 @@ bool AShadowSlaveItemPickup::CaptureSaveRecord_Implementation(FShadowSlaveWorldA
 	}
 
 	OutRecord.CustomStateData.Add(TEXT("Quantity"), FString::FromInt(Quantity));
+	if (ItemDefinition)
+	{
+		OutRecord.CustomStateData.Add(TEXT("ItemDefinitionPath"), ItemDefinition->GetPathName());
+	}
 	return true;
 }
 
@@ -109,9 +124,31 @@ bool AShadowSlaveItemPickup::RestoreSaveRecord_Implementation(const FShadowSlave
 		return false;
 	}
 
+	if (const FString* PathVal = InRecord.CustomStateData.Find(TEXT("ItemDefinitionPath")))
+	{
+		if (!PathVal->IsEmpty())
+		{
+			if (UShadowSlaveItemDefinition* LoadedDef = Cast<UShadowSlaveItemDefinition>(StaticLoadObject(UShadowSlaveItemDefinition::StaticClass(), nullptr, **PathVal)))
+			{
+				ItemDefinition = LoadedDef;
+			}
+		}
+	}
+
 	if (const FString* Val = InRecord.CustomStateData.Find(TEXT("Quantity")))
 	{
 		Quantity = FCString::Atoi(**Val);
+		if (Quantity <= 0 && PickupState == EShadowSlavePickupState::Available)
+		{
+			PickupState = EShadowSlavePickupState::Consumed;
+			bIsCollected = true;
+			SetInteractionEnabled(false);
+			if (StaticMeshComponent)
+			{
+				StaticMeshComponent->SetVisibility(false);
+				StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			}
+		}
 	}
 
 	return true;
