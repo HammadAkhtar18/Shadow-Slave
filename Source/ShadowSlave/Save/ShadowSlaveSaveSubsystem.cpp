@@ -22,6 +22,7 @@
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "World/ShadowSlaveWorldStateComponent.h"
 #include "ShadowSlave.h"
 
@@ -200,6 +201,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		{
 			SaveObject->StoryData = StorySub->ExportSaveData();
 		}
+
+		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		{
+			SaveObject->QuestData = QuestSub->ExportSaveData();
+		}
 	}
 
 	return SaveObject;
@@ -299,6 +305,18 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 			if (UShadowSlaveStorySubsystem* StorySub = GI->GetSubsystem<UShadowSlaveStorySubsystem>())
 			{
 				StorySub->ImportSaveData(SaveGame->StoryData);
+			}
+		}
+	}
+
+	// 11. Quest progression restoration
+	if (SaveGame->QuestData.bIsValid)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+			{
+				QuestSub->ImportSaveData(SaveGame->QuestData);
 			}
 		}
 	}

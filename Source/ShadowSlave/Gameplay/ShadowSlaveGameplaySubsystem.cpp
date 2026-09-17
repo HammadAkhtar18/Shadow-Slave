@@ -6,6 +6,7 @@
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "Nightmares/ShadowSlaveNightmareScenarioDefinition.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "World/ShadowSlaveWorldStateComponent.h"
 #include "Engine/World.h"
@@ -28,6 +29,7 @@ void UShadowSlaveGameplaySubsystem::Initialize(FSubsystemCollectionBase& Collect
 	Collection.InitializeDependency<UShadowSlaveConversationSubsystem>();
 	Collection.InitializeDependency<UShadowSlaveNightmareSubsystem>();
 	Collection.InitializeDependency<UShadowSlaveStorySubsystem>();
+	Collection.InitializeDependency<UShadowSlaveQuestSubsystem>();
 
 	Super::Initialize(Collection);
 
@@ -636,6 +638,15 @@ UShadowSlaveStorySubsystem* UShadowSlaveGameplaySubsystem::GetStorySubsystem() c
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		return GI->GetSubsystem<UShadowSlaveStorySubsystem>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveQuestSubsystem* UShadowSlaveGameplaySubsystem::GetQuestSubsystem() const
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		return GI->GetSubsystem<UShadowSlaveQuestSubsystem>();
 	}
 	return nullptr;
 }

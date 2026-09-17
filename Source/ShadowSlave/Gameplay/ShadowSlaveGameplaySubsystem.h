@@ -16,6 +16,7 @@ class UShadowSlaveNightmareScenarioDefinition;
 class UShadowSlaveConversationSubsystem;
 class UShadowSlaveNightmareSubsystem;
 class UShadowSlaveStorySubsystem;
+class UShadowSlaveQuestSubsystem;
 class UShadowSlaveCombatComponent;
 class UShadowSlaveWorldStateComponent;
 enum class EShadowSlaveScenarioFailureReason : uint8;
@@ -178,6 +179,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Gameplay|Subsystems")
 	UShadowSlaveStorySubsystem* GetStorySubsystem() const;
+
+	/** Retrieves the authoritative Quest Subsystem */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Gameplay|Subsystems")
+	UShadowSlaveQuestSubsystem* GetQuestSubsystem() const;
 
 	/* --- Events --- */
 
