@@ -394,8 +394,13 @@ bool UShadowSlaveGameplaySubsystem::BeginNightmareScenario(UShadowSlaveNightmare
 
 bool UShadowSlaveGameplaySubsystem::EndNightmareFlow()
 {
+	if (!RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration))
+	{
+		return false;
+	}
+
 	ActiveNightmareScenarioId = NAME_None;
-	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+	return true;
 }
 
 bool UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition(const FShadowSlaveGameplayTransitionRequest& Request)
@@ -406,9 +411,13 @@ bool UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition(const FShadowSla
 		return false;
 	}
 
+	UShadowSlaveStorySubsystem* StorySub = nullptr;
+	FName PreviousStepId = NAME_None;
+	bool bStoryStepChanged = false;
+
 	if (!Request.StoryId.IsNone())
 	{
-		UShadowSlaveStorySubsystem* StorySub = GetStorySubsystem();
+		StorySub = GetStorySubsystem();
 		if (!StorySub)
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition - StorySubsystem unavailable for StoryId '%s'."),
@@ -432,18 +441,28 @@ bool UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition(const FShadowSla
 				return false;
 			}
 
+			PreviousStepId = StorySub->GetCurrentStoryStep(Request.StoryId);
+
 			if (!StorySub->SetCurrentStoryStep(Request.StoryId, Request.StoryStepId))
 			{
 				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition - Failed to set story step '%s' on story '%s'."),
 					*Request.StoryStepId.ToString(), *Request.StoryId.ToString());
 				return false;
 			}
+
+			bStoryStepChanged = (PreviousStepId != Request.StoryStepId);
 		}
 	}
 
 	if (!RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Transitioning))
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition - Flow state transition to Transitioning rejected."));
+
+		if (bStoryStepChanged && StorySub)
+		{
+			StorySub->SetCurrentStoryStep(Request.StoryId, PreviousStepId);
+		}
+
 		return false;
 	}
 
