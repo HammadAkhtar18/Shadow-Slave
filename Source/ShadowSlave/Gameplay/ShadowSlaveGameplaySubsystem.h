@@ -247,5 +247,5 @@ protected:
 	void HandleNightmareScenarioFailed(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, EShadowSlaveScenarioFailureReason Reason);
 
 	UFUNCTION()
-	void HandlePlayerCombatStateChanged(ECombatState NewState, ECombatState OldState);
+	void HandlePlayerCombatStateChanged(ECombatState OldState, ECombatState NewState);
 };
