@@ -6,6 +6,7 @@
 #include "GameFramework/SaveGame.h"
 #include "Save/ShadowSlaveSaveTypes.h"
 #include "Nightmares/ShadowSlaveNightmareSaveTypes.h"
+#include "Story/ShadowSlaveStoryTypes.h"
 #include "ShadowSlaveSaveGame.generated.h"
 
 /**
@@ -90,6 +91,10 @@ public:
 	/** Serialized snapshot of Nightmare session and scenario state (if active) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Nightmare")
 	FShadowSlaveNightmareSaveData NightmareData;
+
+	/** Serialized snapshot of story progression state */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Story")
+	FShadowSlaveStorySaveData StoryData;
 
 	/* --- Validation Helpers --- */
 

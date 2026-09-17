@@ -21,6 +21,8 @@
 #include "Memories/ShadowSlaveMemoryDefinition.h"
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
+#include "Story/ShadowSlaveStorySubsystem.h"
+#include "World/ShadowSlaveWorldStateComponent.h"
 #include "ShadowSlave.h"
 
 UShadowSlaveSaveSubsystem::UShadowSlaveSaveSubsystem()
@@ -193,6 +195,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		{
 			SaveObject->NightmareData = NightmareSub->ExportSaveData();
 		}
+
+		if (UShadowSlaveStorySubsystem* StorySub = GI->GetSubsystem<UShadowSlaveStorySubsystem>())
+		{
+			SaveObject->StoryData = StorySub->ExportSaveData();
+		}
 	}
 
 	return SaveObject;
@@ -280,6 +287,18 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 			if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
 			{
 				NightmareSub->ImportSaveData(SaveGame->NightmareData);
+			}
+		}
+	}
+
+	// 10. Story progression restoration
+	if (SaveGame->StoryData.bIsValid)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UShadowSlaveStorySubsystem* StorySub = GI->GetSubsystem<UShadowSlaveStorySubsystem>())
+			{
+				StorySub->ImportSaveData(SaveGame->StoryData);
 			}
 		}
 	}
@@ -637,13 +656,30 @@ void UShadowSlaveSaveSubsystem::CaptureWorldState(UWorld* World, FShadowSlaveWor
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
-		if (Actor && Actor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+		if (!Actor)
+		{
+			continue;
+		}
+
+		if (Actor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
 		{
 			const FName PersistentId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(Actor);
 			if (!PersistentId.IsNone())
 			{
 				FShadowSlaveWorldActorSaveRecord Record;
 				if (IShadowSlaveSaveableInterface::Execute_CaptureSaveRecord(Actor, Record))
+				{
+					OutData.PersistentActors.Add(PersistentId, Record);
+				}
+			}
+		}
+		else if (UShadowSlaveWorldStateComponent* WorldComp = Actor->FindComponentByClass<UShadowSlaveWorldStateComponent>())
+		{
+			const FName PersistentId = WorldComp->GetPersistentStateId();
+			if (!PersistentId.IsNone())
+			{
+				FShadowSlaveWorldActorSaveRecord Record;
+				if (WorldComp->CaptureSaveRecord(Record))
 				{
 					OutData.PersistentActors.Add(PersistentId, Record);
 				}
@@ -664,7 +700,12 @@ void UShadowSlaveSaveSubsystem::RestoreWorldState(UWorld* World, const FShadowSl
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
-		if (Actor && Actor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+		if (!Actor)
+		{
+			continue;
+		}
+
+		if (Actor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
 		{
 			const FName PersistentId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(Actor);
 			if (!PersistentId.IsNone())
@@ -672,6 +713,17 @@ void UShadowSlaveSaveSubsystem::RestoreWorldState(UWorld* World, const FShadowSl
 				if (const FShadowSlaveWorldActorSaveRecord* FoundRecord = InData.PersistentActors.Find(PersistentId))
 				{
 					IShadowSlaveSaveableInterface::Execute_RestoreSaveRecord(Actor, *FoundRecord);
+				}
+			}
+		}
+		else if (UShadowSlaveWorldStateComponent* WorldComp = Actor->FindComponentByClass<UShadowSlaveWorldStateComponent>())
+		{
+			const FName PersistentId = WorldComp->GetPersistentStateId();
+			if (!PersistentId.IsNone())
+			{
+				if (const FShadowSlaveWorldActorSaveRecord* FoundRecord = InData.PersistentActors.Find(PersistentId))
+				{
+					WorldComp->RestoreSaveRecord(*FoundRecord);
 				}
 			}
 		}
