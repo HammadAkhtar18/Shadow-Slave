@@ -1,6 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Interaction/ShadowSlaveInteractableNPC.h"
+#include "Dialogue/ShadowSlaveDialogueDefinition.h"
+#include "Dialogue/ShadowSlaveConversationSubsystem.h"
+#include "Engine/GameInstance.h"
 
 AShadowSlaveInteractableNPC::AShadowSlaveInteractableNPC(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -10,6 +13,7 @@ AShadowSlaveInteractableNPC::AShadowSlaveInteractableNPC(const FObjectInitialize
 	NPCDisplayName = FText::FromString(TEXT("NPC"));
 	InteractionVerb = FText::FromString(TEXT("Talk"));
 	InteractionPriority = 1;
+	DialogueDefinition = nullptr;
 }
 
 bool AShadowSlaveInteractableNPC::CanInteract_Implementation(AActor* Interactor)
@@ -27,6 +31,33 @@ FText AShadowSlaveInteractableNPC::GetInteractionPrompt_Implementation(AActor* I
 	return InteractionVerb;
 }
 
+void AShadowSlaveInteractableNPC::SetDialogueDefinition(UShadowSlaveDialogueDefinition* InDialogueDef)
+{
+	DialogueDefinition = InDialogueDef;
+}
+
+bool AShadowSlaveInteractableNPC::StartDialogue(AActor* Interactor)
+{
+	if (!DialogueDefinition || !Interactor)
+	{
+		return false;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return false;
+	}
+
+	UShadowSlaveConversationSubsystem* ConvSubsystem = GI->GetSubsystem<UShadowSlaveConversationSubsystem>();
+	if (!ConvSubsystem)
+	{
+		return false;
+	}
+
+	return ConvSubsystem->StartConversation(DialogueDefinition, this, Interactor);
+}
+
 FShadowSlaveInteractionResult AShadowSlaveInteractableNPC::Interact_Implementation(AActor* Interactor)
 {
 	if (!CanInteract_Implementation(Interactor))
@@ -37,7 +68,20 @@ FShadowSlaveInteractionResult AShadowSlaveInteractableNPC::Interact_Implementati
 	OnInteractedBy(Interactor);
 	OnNPCInteracted.Broadcast(Interactor, this);
 
-	return FShadowSlaveInteractionResult::Success(NPCId);
+	// If dialogue definition is assigned, trigger dialogue conversation via conversation subsystem
+	if (DialogueDefinition)
+	{
+		const bool bDialogueStarted = StartDialogue(Interactor);
+		if (bDialogueStarted)
+		{
+			return FShadowSlaveInteractionResult::Success(NPCId);
+		}
+
+		return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("Cannot start dialogue.")), NPCId);
+	}
+
+	// If no dialogue definition is assigned, fail safely per Step 20 specification
+	return FShadowSlaveInteractionResult::Failure(FText::FromString(TEXT("No dialogue available.")), NPCId);
 }
 
 int32 AShadowSlaveInteractableNPC::GetInteractionPriority_Implementation(AActor* Interactor)
@@ -47,7 +91,7 @@ int32 AShadowSlaveInteractableNPC::GetInteractionPriority_Implementation(AActor*
 
 void AShadowSlaveInteractableNPC::OnInteractedBy_Implementation(AActor* Interactor)
 {
-	// Optional base logic: orient NPC towards interactor
+	// Orient NPC towards interactor
 	if (Interactor)
 	{
 		const FVector Direction = Interactor->GetActorLocation() - GetActorLocation();

@@ -46,6 +46,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Interaction|NPC")
 	FText GetNPCDisplayName() const { return NPCDisplayName; }
 
+	/* --- Dialogue Integration --- */
+
+	/** Returns the dialogue definition assigned to this NPC */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Interaction|Dialogue")
+	class UShadowSlaveDialogueDefinition* GetDialogueDefinition() const { return DialogueDefinition; }
+
+	/** Assigns a dialogue definition to this NPC */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Interaction|Dialogue")
+	void SetDialogueDefinition(class UShadowSlaveDialogueDefinition* InDialogueDef);
+
+	/** Initiates dialogue between this NPC and the interactor via ConversationSubsystem */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Interaction|Dialogue")
+	virtual bool StartDialogue(AActor* Interactor);
+
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Interaction|NPC")
 	FOnNPCInteractedSignature OnNPCInteracted;
 
@@ -74,4 +88,8 @@ protected:
 	/** Priority used to resolve ties when multiple interactables are in range */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Interaction|NPC")
 	int32 InteractionPriority = 1;
+
+	/** Data-driven dialogue definition asset referenced by this NPC */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Interaction|Dialogue")
+	TObjectPtr<class UShadowSlaveDialogueDefinition> DialogueDefinition = nullptr;
 };
