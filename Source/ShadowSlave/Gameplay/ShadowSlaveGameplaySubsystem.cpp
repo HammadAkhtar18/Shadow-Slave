@@ -1,0 +1,631 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Gameplay/ShadowSlaveGameplaySubsystem.h"
+#include "Dialogue/ShadowSlaveConversationSubsystem.h"
+#include "Dialogue/ShadowSlaveDialogueDefinition.h"
+#include "Nightmares/ShadowSlaveNightmareSubsystem.h"
+#include "Nightmares/ShadowSlaveNightmareScenarioDefinition.h"
+#include "Story/ShadowSlaveStorySubsystem.h"
+#include "Combat/ShadowSlaveCombatComponent.h"
+#include "World/ShadowSlaveWorldStateComponent.h"
+#include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "ShadowSlave.h"
+
+UShadowSlaveGameplaySubsystem::UShadowSlaveGameplaySubsystem()
+	: CurrentFlowState(EShadowSlaveGameplayFlowState::None)
+	, PreviousFlowState(EShadowSlaveGameplayFlowState::None)
+	, ActiveNightmareScenarioId(NAME_None)
+	, bIsProcessingFlowTransition(false)
+{
+}
+
+void UShadowSlaveGameplaySubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	CurrentFlowState = EShadowSlaveGameplayFlowState::None;
+	PreviousFlowState = EShadowSlaveGameplayFlowState::None;
+	ActiveNightmareScenarioId = NAME_None;
+	bIsProcessingFlowTransition = false;
+
+	// Bind to authoritative ConversationSubsystem if available
+	if (UShadowSlaveConversationSubsystem* ConvSub = GetConversationSubsystem())
+	{
+		ConvSub->OnConversationCompleted.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleConversationCompleted);
+		ConvSub->OnConversationAborted.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleConversationAborted);
+	}
+
+	// Bind to authoritative NightmareSubsystem if available
+	if (UShadowSlaveNightmareSubsystem* NightmareSub = GetNightmareSubsystem())
+	{
+		NightmareSub->OnScenarioStarted.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioStarted);
+		NightmareSub->OnScenarioCompleted.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+		NightmareSub->OnScenarioFailed.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioFailed);
+		NightmareSub->OnScenarioAborted.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+		NightmareSub->OnScenarioExited.AddDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+	}
+}
+
+void UShadowSlaveGameplaySubsystem::Deinitialize()
+{
+	if (UShadowSlaveConversationSubsystem* ConvSub = GetConversationSubsystem())
+	{
+		ConvSub->OnConversationCompleted.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleConversationCompleted);
+		ConvSub->OnConversationAborted.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleConversationAborted);
+	}
+
+	if (UShadowSlaveNightmareSubsystem* NightmareSub = GetNightmareSubsystem())
+	{
+		NightmareSub->OnScenarioStarted.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioStarted);
+		NightmareSub->OnScenarioCompleted.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+		NightmareSub->OnScenarioFailed.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioFailed);
+		NightmareSub->OnScenarioAborted.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+		NightmareSub->OnScenarioExited.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded);
+	}
+
+	if (APawn* PlayerPawn = CurrentPlayerPawn.Get())
+	{
+		if (UShadowSlaveCombatComponent* Combat = PlayerPawn->FindComponentByClass<UShadowSlaveCombatComponent>())
+		{
+			Combat->OnCombatStateChanged.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandlePlayerCombatStateChanged);
+		}
+	}
+
+	CurrentPlayerPawn.Reset();
+	CurrentPlayerController.Reset();
+	CurrentInteractionTarget.Reset();
+	CurrentConversationSpeaker.Reset();
+	CurrentCombatInstigator.Reset();
+
+	Super::Deinitialize();
+}
+
+bool UShadowSlaveGameplaySubsystem::CanTransitionFlowState(EShadowSlaveGameplayFlowState CurrentState, EShadowSlaveGameplayFlowState TargetState) const
+{
+	if (TargetState == EShadowSlaveGameplayFlowState::Unknown)
+	{
+		return false;
+	}
+
+	// Idempotent: transitioning to same state is always permitted
+	if (CurrentState == TargetState)
+	{
+		return true;
+	}
+
+	switch (CurrentState)
+	{
+	case EShadowSlaveGameplayFlowState::Unknown:
+	case EShadowSlaveGameplayFlowState::None:
+		return TargetState == EShadowSlaveGameplayFlowState::Exploration ||
+		       TargetState == EShadowSlaveGameplayFlowState::Nightmare ||
+		       TargetState == EShadowSlaveGameplayFlowState::Dialogue ||
+		       TargetState == EShadowSlaveGameplayFlowState::Transitioning ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused;
+
+	case EShadowSlaveGameplayFlowState::Exploration:
+		return TargetState == EShadowSlaveGameplayFlowState::Dialogue ||
+		       TargetState == EShadowSlaveGameplayFlowState::Combat ||
+		       TargetState == EShadowSlaveGameplayFlowState::Nightmare ||
+		       TargetState == EShadowSlaveGameplayFlowState::Transitioning ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused ||
+		       TargetState == EShadowSlaveGameplayFlowState::None;
+
+	case EShadowSlaveGameplayFlowState::Dialogue:
+		return TargetState == EShadowSlaveGameplayFlowState::Exploration ||
+		       TargetState == EShadowSlaveGameplayFlowState::Combat ||
+		       TargetState == EShadowSlaveGameplayFlowState::Nightmare ||
+		       TargetState == EShadowSlaveGameplayFlowState::Transitioning ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused ||
+		       TargetState == EShadowSlaveGameplayFlowState::None;
+
+	case EShadowSlaveGameplayFlowState::Combat:
+		return TargetState == EShadowSlaveGameplayFlowState::Exploration ||
+		       TargetState == EShadowSlaveGameplayFlowState::Nightmare ||
+		       TargetState == EShadowSlaveGameplayFlowState::Dialogue ||
+		       TargetState == EShadowSlaveGameplayFlowState::Transitioning ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused ||
+		       TargetState == EShadowSlaveGameplayFlowState::None;
+
+	case EShadowSlaveGameplayFlowState::Nightmare:
+		return TargetState == EShadowSlaveGameplayFlowState::Combat ||
+		       TargetState == EShadowSlaveGameplayFlowState::Dialogue ||
+		       TargetState == EShadowSlaveGameplayFlowState::Exploration ||
+		       TargetState == EShadowSlaveGameplayFlowState::Transitioning ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused ||
+		       TargetState == EShadowSlaveGameplayFlowState::None;
+
+	case EShadowSlaveGameplayFlowState::Transitioning:
+		return TargetState == EShadowSlaveGameplayFlowState::Exploration ||
+		       TargetState == EShadowSlaveGameplayFlowState::Nightmare ||
+		       TargetState == EShadowSlaveGameplayFlowState::None ||
+		       TargetState == EShadowSlaveGameplayFlowState::Paused;
+
+	case EShadowSlaveGameplayFlowState::Paused:
+		return TargetState != EShadowSlaveGameplayFlowState::Unknown;
+
+	default:
+		return false;
+	}
+}
+
+bool UShadowSlaveGameplaySubsystem::RequestFlowStateTransition(EShadowSlaveGameplayFlowState NewState)
+{
+	if (NewState == EShadowSlaveGameplayFlowState::Unknown)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestFlowStateTransition - Rejected transition to Unknown state."));
+		return false;
+	}
+
+	if (CurrentFlowState == NewState)
+	{
+		// Idempotent: already in the requested state; do not emit redundant delegate broadcast
+		return true;
+	}
+
+	if (bIsProcessingFlowTransition)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestFlowStateTransition - Re-entrant transition rejected (%d -> %d)."),
+			static_cast<uint8>(CurrentFlowState), static_cast<uint8>(NewState));
+		return false;
+	}
+
+	if (!CanTransitionFlowState(CurrentFlowState, NewState))
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestFlowStateTransition - Rejected illegal state transition from %d to %d."),
+			static_cast<uint8>(CurrentFlowState), static_cast<uint8>(NewState));
+		return false;
+	}
+
+	TGuardValue<bool> TransitionGuard(bIsProcessingFlowTransition, true);
+
+	const EShadowSlaveGameplayFlowState OldState = CurrentFlowState;
+	PreviousFlowState = OldState;
+	CurrentFlowState = NewState;
+
+	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveGameplaySubsystem: FlowState transitioned from %d to %d"),
+		static_cast<uint8>(OldState), static_cast<uint8>(NewState));
+
+	OnGameplayFlowStateChanged.Broadcast(NewState, OldState);
+	return true;
+}
+
+bool UShadowSlaveGameplaySubsystem::BeginExploration()
+{
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+}
+
+bool UShadowSlaveGameplaySubsystem::BeginDialogue(UShadowSlaveDialogueDefinition* DialogueDef, AActor* SpeakerActor, AActor* InteractorActor)
+{
+	if (!DialogueDef)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginDialogue - DialogueDef is null."));
+		return false;
+	}
+
+	UShadowSlaveConversationSubsystem* ConvSub = GetConversationSubsystem();
+	if (!ConvSub)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginDialogue - ConversationSubsystem unavailable."));
+		return false;
+	}
+
+	if (ConvSub->IsConversationActive())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginDialogue - A conversation is already active."));
+		return false;
+	}
+
+	AActor* ActualInteractor = InteractorActor;
+	if (!ActualInteractor)
+	{
+		ActualInteractor = GetPlayerPawn();
+		if (!ActualInteractor)
+		{
+			ResolvePlayerContext();
+			ActualInteractor = GetPlayerPawn();
+		}
+	}
+
+	CurrentConversationSpeaker = SpeakerActor;
+	CurrentInteractionTarget = SpeakerActor;
+
+	const bool bStarted = ConvSub->StartConversation(DialogueDef, SpeakerActor, ActualInteractor);
+	if (!bStarted)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginDialogue - ConversationSubsystem rejected StartConversation for '%s'."),
+			*DialogueDef->DialogueId.ToString());
+		CurrentConversationSpeaker = nullptr;
+		return false;
+	}
+
+	RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Dialogue);
+	return true;
+}
+
+bool UShadowSlaveGameplaySubsystem::EndDialogue(bool bAbort)
+{
+	UShadowSlaveConversationSubsystem* ConvSub = GetConversationSubsystem();
+	if (ConvSub && ConvSub->IsConversationActive())
+	{
+		if (bAbort)
+		{
+			ConvSub->AbortConversation();
+		}
+		else
+		{
+			ConvSub->CompleteConversation();
+		}
+	}
+
+	CurrentConversationSpeaker = nullptr;
+
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Dialogue)
+	{
+		const EShadowSlaveGameplayFlowState RestoreState =
+			(!ActiveNightmareScenarioId.IsNone()) ? EShadowSlaveGameplayFlowState::Nightmare :
+			(PreviousFlowState != EShadowSlaveGameplayFlowState::Dialogue && PreviousFlowState != EShadowSlaveGameplayFlowState::None)
+				? PreviousFlowState : EShadowSlaveGameplayFlowState::Exploration;
+
+		RequestFlowStateTransition(RestoreState);
+	}
+
+	return true;
+}
+
+bool UShadowSlaveGameplaySubsystem::BeginCombatFlow(AActor* InstigatingEnemy)
+{
+	CurrentCombatInstigator = InstigatingEnemy;
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Combat);
+}
+
+bool UShadowSlaveGameplaySubsystem::EndCombatFlow()
+{
+	CurrentCombatInstigator = nullptr;
+
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Combat)
+	{
+		const EShadowSlaveGameplayFlowState RestoreState =
+			(!ActiveNightmareScenarioId.IsNone()) ? EShadowSlaveGameplayFlowState::Nightmare :
+			(PreviousFlowState != EShadowSlaveGameplayFlowState::Combat && PreviousFlowState != EShadowSlaveGameplayFlowState::None)
+				? PreviousFlowState : EShadowSlaveGameplayFlowState::Exploration;
+
+		return RequestFlowStateTransition(RestoreState);
+	}
+
+	return true;
+}
+
+bool UShadowSlaveGameplaySubsystem::BeginNightmareFlow(FName ScenarioId)
+{
+	if (ScenarioId.IsNone())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginNightmareFlow - ScenarioId is None."));
+		return false;
+	}
+
+	ActiveNightmareScenarioId = ScenarioId;
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Nightmare);
+}
+
+bool UShadowSlaveGameplaySubsystem::BeginNightmareScenario(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, APlayerController* InPlayerController)
+{
+	if (!ScenarioDef)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginNightmareScenario - ScenarioDef is null."));
+		return false;
+	}
+
+	UShadowSlaveNightmareSubsystem* NightmareSub = GetNightmareSubsystem();
+	if (!NightmareSub)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginNightmareScenario - NightmareSubsystem unavailable."));
+		return false;
+	}
+
+	APlayerController* TargetPC = InPlayerController ? InPlayerController : GetPlayerController();
+	if (!TargetPC)
+	{
+		ResolvePlayerContext();
+		TargetPC = GetPlayerController();
+	}
+
+	const bool bStarted = NightmareSub->StartScenario(ScenarioDef, TargetPC);
+	if (bStarted)
+	{
+		ActiveNightmareScenarioId = ScenarioDef->ScenarioId;
+		RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Nightmare);
+		return true;
+	}
+
+	return false;
+}
+
+bool UShadowSlaveGameplaySubsystem::EndNightmareFlow()
+{
+	ActiveNightmareScenarioId = NAME_None;
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+}
+
+bool UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition(const FShadowSlaveGameplayTransitionRequest& Request)
+{
+	if (!Request.IsValid())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition - Invalid transition request (empty StoryId, TargetWorldId, and Reason)."));
+		return false;
+	}
+
+	if (!Request.StoryId.IsNone())
+	{
+		if (UShadowSlaveStorySubsystem* StorySub = GetStorySubsystem())
+		{
+			if (StorySub->HasStoryDefinition(Request.StoryId))
+			{
+				if (!Request.StoryStepId.IsNone() && StorySub->IsStoryActive(Request.StoryId))
+				{
+					StorySub->SetCurrentStoryStep(Request.StoryId, Request.StoryStepId);
+				}
+			}
+			else
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::RequestWorldStoryTransition - StoryId '%s' is not registered in StorySubsystem."),
+					*Request.StoryId.ToString());
+			}
+		}
+	}
+
+	RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Transitioning);
+
+	OnGameplayTransitionRequested.Broadcast(Request);
+
+	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveGameplaySubsystem: Dispatched gameplay transition request (Story: '%s', World: '%s', Reason: '%s')"),
+		*Request.StoryId.ToString(), *Request.TargetWorldId.ToString(), *Request.Reason.ToString());
+
+	return true;
+}
+
+bool UShadowSlaveGameplaySubsystem::PauseGameplayFlow()
+{
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Paused)
+	{
+		return true;
+	}
+
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Paused);
+}
+
+bool UShadowSlaveGameplaySubsystem::ResumeGameplayFlow()
+{
+	if (CurrentFlowState != EShadowSlaveGameplayFlowState::Paused)
+	{
+		return false;
+	}
+
+	const EShadowSlaveGameplayFlowState ResumeState =
+		(PreviousFlowState != EShadowSlaveGameplayFlowState::Paused && PreviousFlowState != EShadowSlaveGameplayFlowState::None)
+			? PreviousFlowState
+			: EShadowSlaveGameplayFlowState::Exploration;
+
+	return RequestFlowStateTransition(ResumeState);
+}
+
+bool UShadowSlaveGameplaySubsystem::ResolvePlayerContext()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (!PC)
+	{
+		return false;
+	}
+
+	APawn* Pawn = PC->GetPawn();
+	SetPlayerContext(PC, Pawn);
+	return Pawn != nullptr;
+}
+
+void UShadowSlaveGameplaySubsystem::SetPlayerContext(APlayerController* InController, APawn* InPawn)
+{
+	const bool bPawnChanged = (CurrentPlayerPawn.Get() != InPawn);
+
+	if (bPawnChanged)
+	{
+		if (APawn* OldPawn = CurrentPlayerPawn.Get())
+		{
+			if (UShadowSlaveCombatComponent* OldCombat = OldPawn->FindComponentByClass<UShadowSlaveCombatComponent>())
+			{
+				OldCombat->OnCombatStateChanged.RemoveDynamic(this, &UShadowSlaveGameplaySubsystem::HandlePlayerCombatStateChanged);
+			}
+		}
+
+		CurrentPlayerPawn = InPawn;
+		CurrentPlayerController = InController;
+
+		if (InPawn)
+		{
+			if (UShadowSlaveCombatComponent* NewCombat = InPawn->FindComponentByClass<UShadowSlaveCombatComponent>())
+			{
+				NewCombat->OnCombatStateChanged.AddUniqueDynamic(this, &UShadowSlaveGameplaySubsystem::HandlePlayerCombatStateChanged);
+			}
+		}
+
+		OnPlayerContextUpdated.Broadcast(InPawn);
+	}
+	else
+	{
+		CurrentPlayerController = InController;
+	}
+}
+
+APawn* UShadowSlaveGameplaySubsystem::GetPlayerPawn() const
+{
+	return CurrentPlayerPawn.Get();
+}
+
+APlayerController* UShadowSlaveGameplaySubsystem::GetPlayerController() const
+{
+	return CurrentPlayerController.Get();
+}
+
+AActor* UShadowSlaveGameplaySubsystem::GetInteractionTarget() const
+{
+	return CurrentInteractionTarget.Get();
+}
+
+void UShadowSlaveGameplaySubsystem::SetInteractionTarget(AActor* Target)
+{
+	CurrentInteractionTarget = Target;
+}
+
+AActor* UShadowSlaveGameplaySubsystem::GetConversationSpeaker() const
+{
+	return CurrentConversationSpeaker.Get();
+}
+
+AActor* UShadowSlaveGameplaySubsystem::GetCombatInstigator() const
+{
+	return CurrentCombatInstigator.Get();
+}
+
+FName UShadowSlaveGameplaySubsystem::GetActiveNightmareScenarioId() const
+{
+	return ActiveNightmareScenarioId;
+}
+
+UShadowSlaveWorldStateComponent* UShadowSlaveGameplaySubsystem::GetPlayerWorldState() const
+{
+	if (const APawn* Pawn = CurrentPlayerPawn.Get())
+	{
+		return Pawn->FindComponentByClass<UShadowSlaveWorldStateComponent>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveWorldStateComponent* UShadowSlaveGameplaySubsystem::GetInteractionTargetWorldState() const
+{
+	if (const AActor* Target = CurrentInteractionTarget.Get())
+	{
+		return Target->FindComponentByClass<UShadowSlaveWorldStateComponent>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveWorldStateComponent* UShadowSlaveGameplaySubsystem::GetWorldStateComponentForActor(const AActor* Actor) const
+{
+	if (Actor)
+	{
+		return Actor->FindComponentByClass<UShadowSlaveWorldStateComponent>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveConversationSubsystem* UShadowSlaveGameplaySubsystem::GetConversationSubsystem() const
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		return GI->GetSubsystem<UShadowSlaveConversationSubsystem>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveNightmareSubsystem* UShadowSlaveGameplaySubsystem::GetNightmareSubsystem() const
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		return GI->GetSubsystem<UShadowSlaveNightmareSubsystem>();
+	}
+	return nullptr;
+}
+
+UShadowSlaveStorySubsystem* UShadowSlaveGameplaySubsystem::GetStorySubsystem() const
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		return GI->GetSubsystem<UShadowSlaveStorySubsystem>();
+	}
+	return nullptr;
+}
+
+void UShadowSlaveGameplaySubsystem::HandleConversationCompleted(FName DialogueId)
+{
+	CurrentConversationSpeaker = nullptr;
+
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Dialogue)
+	{
+		const EShadowSlaveGameplayFlowState RestoreState =
+			(!ActiveNightmareScenarioId.IsNone()) ? EShadowSlaveGameplayFlowState::Nightmare :
+			(PreviousFlowState != EShadowSlaveGameplayFlowState::Dialogue && PreviousFlowState != EShadowSlaveGameplayFlowState::None)
+				? PreviousFlowState : EShadowSlaveGameplayFlowState::Exploration;
+
+		RequestFlowStateTransition(RestoreState);
+	}
+}
+
+void UShadowSlaveGameplaySubsystem::HandleConversationAborted(FName DialogueId, FName LastNodeId)
+{
+	CurrentConversationSpeaker = nullptr;
+
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Dialogue)
+	{
+		const EShadowSlaveGameplayFlowState RestoreState =
+			(!ActiveNightmareScenarioId.IsNone()) ? EShadowSlaveGameplayFlowState::Nightmare :
+			(PreviousFlowState != EShadowSlaveGameplayFlowState::Dialogue && PreviousFlowState != EShadowSlaveGameplayFlowState::None)
+				? PreviousFlowState : EShadowSlaveGameplayFlowState::Exploration;
+
+		RequestFlowStateTransition(RestoreState);
+	}
+}
+
+void UShadowSlaveGameplaySubsystem::HandleNightmareScenarioStarted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
+{
+	ActiveNightmareScenarioId = ScenarioDef ? ScenarioDef->ScenarioId : NAME_None;
+
+	if (CurrentFlowState != EShadowSlaveGameplayFlowState::Nightmare)
+	{
+		RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Nightmare);
+	}
+}
+
+void UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
+{
+	ActiveNightmareScenarioId = NAME_None;
+
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Nightmare || CurrentFlowState == EShadowSlaveGameplayFlowState::Combat)
+	{
+		RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+	}
+}
+
+void UShadowSlaveGameplaySubsystem::HandleNightmareScenarioFailed(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, EShadowSlaveScenarioFailureReason Reason)
+{
+	HandleNightmareScenarioEnded(ScenarioDef);
+}
+
+void UShadowSlaveGameplaySubsystem::HandlePlayerCombatStateChanged(ECombatState NewState, ECombatState OldState)
+{
+	if (NewState == ECombatState::Attacking || NewState == ECombatState::Dodging || NewState == ECombatState::HitStun)
+	{
+		if (CurrentFlowState != EShadowSlaveGameplayFlowState::Combat &&
+		    CurrentFlowState != EShadowSlaveGameplayFlowState::Dialogue &&
+		    CurrentFlowState != EShadowSlaveGameplayFlowState::Transitioning &&
+		    CurrentFlowState != EShadowSlaveGameplayFlowState::Paused)
+		{
+			RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Combat);
+		}
+	}
+	else if (NewState == ECombatState::Neutral)
+	{
+		// If combat ended and player has no active adversary, combat flow may conclude
+		if (CurrentFlowState == EShadowSlaveGameplayFlowState::Combat && !CurrentCombatInstigator.IsValid())
+		{
+			EndCombatFlow();
+		}
+	}
+}
