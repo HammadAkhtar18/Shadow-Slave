@@ -6,7 +6,7 @@
 #include "Items/ShadowSlaveItemDefinition.h"
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Memories/ShadowSlaveMemoryDefinition.h"
-#include "ShadowSlaveLogChannels.h"
+#include "Core/ShadowSlaveLogChannels.h"
 
 UShadowSlaveEquipmentComponent::UShadowSlaveEquipmentComponent()
 {
