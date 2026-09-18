@@ -226,7 +226,11 @@ bool UShadowSlaveGameplaySubsystem::StartGameplaySession(APlayerController* InPl
 	}
 
 	// 2. Ensure runtime progression infrastructure is initialized
-	InitializeGameplayProgression();
+	const bool bProgressionOk = InitializeGameplayProgression();
+	if (!bProgressionOk)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::StartGameplaySession - Progression infrastructure could not be initialized (authoritative StorySubsystem or bridge unavailable); proceeding with gameplay flow transition."));
+	}
 
 	// 3. Handle repeated startup idempotently if already in Exploration
 	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Exploration)
@@ -248,16 +252,30 @@ bool UShadowSlaveGameplaySubsystem::StartGameplaySession(APlayerController* InPl
 
 bool UShadowSlaveGameplaySubsystem::InitializeGameplayProgression()
 {
-	// 1. Ensure the authoritative StorySubsystem progression bridge is initialized
-	if (UShadowSlaveStorySubsystem* StorySub = GetStorySubsystem())
+	// 1. Resolve authoritative StorySubsystem through existing GameplaySubsystem accessor
+	UShadowSlaveStorySubsystem* StorySub = GetStorySubsystem();
+	if (!StorySub)
 	{
-		if (!StorySub->IsProgressionBridgeActive())
-		{
-			StorySub->InitializeProgressionBridge();
-		}
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::InitializeGameplayProgression - Authoritative StorySubsystem could not be resolved."));
+		bIsProgressionInitialized = false;
+		return false;
 	}
 
-	// 2. Synchronize player context to QuestSubsystem if player pawn is already registered
+	// 2. If the progression bridge is not active, attempt to initialize it
+	if (!StorySub->IsProgressionBridgeActive())
+	{
+		StorySub->InitializeProgressionBridge();
+	}
+
+	// 3. Explicitly verify the progression bridge is actually active after the call
+	if (!StorySub->IsProgressionBridgeActive())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::InitializeGameplayProgression - Authoritative StorySubsystem progression bridge is not active."));
+		bIsProgressionInitialized = false;
+		return false;
+	}
+
+	// 4. Synchronize player context to authoritative QuestSubsystem only if a player pawn is currently registered
 	if (CurrentPlayerPawn.IsValid())
 	{
 		if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
@@ -266,6 +284,7 @@ bool UShadowSlaveGameplaySubsystem::InitializeGameplayProgression()
 		}
 	}
 
+	// 5. Authoritative Story progression bridge is confirmed active
 	bIsProgressionInitialized = true;
 	return true;
 }
