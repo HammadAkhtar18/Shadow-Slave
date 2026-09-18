@@ -6,7 +6,11 @@
 #include "Misc/AutomationTest.h"
 #include "Gameplay/ShadowSlaveGameplaySubsystem.h"
 #include "Gameplay/ShadowSlaveGameplayTypes.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Gameplay/ShadowSlaveQuestDefinition.h"
+#include "Gameplay/ShadowSlaveQuestTypes.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Story/ShadowSlaveStoryDefinition.h"
 #include "Story/ShadowSlaveStoryTypes.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -353,6 +357,178 @@ bool FShadowSlaveGameplayBootstrapPermitsExplorationWithoutPlayerContextTest::Ru
 		GameplaySub->ResolvePlayerContext());
 	TestEqual(TEXT("Flow state remains Exploration after context operations"),
 		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayProgressionBootstrapIsIdempotentAndSafeTest,
+	"ShadowSlave.Gameplay.ProgressionBootstrapIsIdempotentAndSafe",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayProgressionBootstrapIsIdempotentAndSafeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	// 1. Initially progression is not initialized
+	TestFalse(TEXT("Progression must not be marked initialized prior to bootstrap"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 2. First explicit initialization succeeds
+	TestTrue(TEXT("First InitializeGameplayProgression must return true"),
+		GameplaySub->InitializeGameplayProgression());
+	TestTrue(TEXT("Progression must be marked initialized"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 3. Repeated explicit calls are idempotent and return true without error
+	TestTrue(TEXT("Second InitializeGameplayProgression must return true"),
+		GameplaySub->InitializeGameplayProgression());
+	TestTrue(TEXT("Third InitializeGameplayProgression must return true"),
+		GameplaySub->InitializeGameplayProgression());
+	TestTrue(TEXT("Progression remains marked initialized"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 4. Starting gameplay session also ensures progression bootstrap and preserves initialized state
+	TestTrue(TEXT("StartGameplaySession succeeds"), GameplaySub->StartGameplaySession());
+	TestTrue(TEXT("Progression remains marked initialized after StartGameplaySession"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 5. Subsequent initialization call after session start remains idempotent
+	TestTrue(TEXT("InitializeGameplayProgression after session start must return true"),
+		GameplaySub->InitializeGameplayProgression());
+	TestTrue(TEXT("Progression remains marked initialized"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 6. Standalone StorySubsystem bridge idempotency check
+	UShadowSlaveStorySubsystem* StorySub = NewObject<UShadowSlaveStorySubsystem>();
+	TestNotNull(TEXT("StorySubsystem must instantiate"), StorySub);
+	if (StorySub)
+	{
+		StorySub->InitializeProgressionBridge();
+		StorySub->InitializeProgressionBridge();
+		StorySub->ShutdownProgressionBridge();
+		StorySub->ShutdownProgressionBridge();
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayProgressionBootstrapPreservesFlowStateAndRequiresNoPlayerContextTest,
+	"ShadowSlave.Gameplay.ProgressionBootstrapPreservesFlowStateAndRequiresNoPlayerContext",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayProgressionBootstrapPreservesFlowStateAndRequiresNoPlayerContextTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	// 1. Establish an active gameplay flow (None -> Exploration -> Combat)
+	TestTrue(TEXT("Transition to Exploration succeeds"),
+		GameplaySub->RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration));
+	TestTrue(TEXT("Transition to Combat succeeds"),
+		GameplaySub->RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Combat));
+	TestEqual(TEXT("Flow state is Combat"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Combat);
+	TestEqual(TEXT("Previous flow state is Exploration"),
+		GameplaySub->GetPreviousFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+
+	// 2. Verify that player context is absent
+	TestNull(TEXT("PlayerPawn is null"), GameplaySub->GetPlayerPawn());
+	TestNull(TEXT("PlayerController is null"), GameplaySub->GetPlayerController());
+
+	// 3. Initialize progression without player context
+	TestTrue(TEXT("InitializeGameplayProgression succeeds without player context"),
+		GameplaySub->InitializeGameplayProgression());
+	TestTrue(TEXT("Progression is marked initialized"),
+		GameplaySub->IsGameplayProgressionInitialized());
+
+	// 4. Verify existing gameplay flow is preserved untouched
+	TestEqual(TEXT("Flow state must remain Combat"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Combat);
+	TestEqual(TEXT("Previous flow state must remain Exploration"),
+		GameplaySub->GetPreviousFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+	TestNull(TEXT("PlayerPawn remains null"), GameplaySub->GetPlayerPawn());
+	TestNull(TEXT("PlayerController remains null"), GameplaySub->GetPlayerController());
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayProgressionBootstrapPreservesStoryAndQuestStateTest,
+	"ShadowSlave.Gameplay.ProgressionBootstrapPreservesStoryAndQuestState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayProgressionBootstrapPreservesStoryAndQuestStateTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	UShadowSlaveStorySubsystem* StorySub = NewObject<UShadowSlaveStorySubsystem>();
+	TestNotNull(TEXT("StorySubsystem must instantiate"), StorySub);
+	if (!StorySub)
+	{
+		return false;
+	}
+
+	UShadowSlaveQuestSubsystem* QuestSub = NewObject<UShadowSlaveQuestSubsystem>();
+	TestNotNull(TEXT("QuestSubsystem must instantiate"), QuestSub);
+	if (!QuestSub)
+	{
+		return false;
+	}
+
+	// 1. Author and activate a test story definition
+	const FName TestStoryId(TEXT("Test_Story_BootstrapPreservation"));
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	StoryDef->StoryId = TestStoryId;
+	StoryDef->Version = 1;
+	TestTrue(TEXT("RegisterStoryDefinition succeeds"), StorySub->RegisterStoryDefinition(StoryDef));
+	TestTrue(TEXT("StartStory succeeds"), StorySub->StartStory(TestStoryId));
+	TestEqual(TEXT("Story state must be Active"),
+		StorySub->GetStoryState(TestStoryId), EShadowSlaveStoryState::Active);
+
+	// 2. Author and register a test quest definition
+	const FName TestQuestId(TEXT("Test_Quest_BootstrapPreservation"));
+	UShadowSlaveQuestDefinition* QuestDef = NewObject<UShadowSlaveQuestDefinition>();
+	QuestDef->QuestId = TestQuestId;
+	QuestDef->Version = 1;
+	TestTrue(TEXT("RegisterQuestDefinition succeeds"), QuestSub->RegisterQuestDefinition(QuestDef));
+	TestEqual(TEXT("Quest state must be Available"),
+		QuestSub->GetQuestState(TestQuestId), EShadowSlaveQuestState::Available);
+
+	// 3. Initialize gameplay progression
+	TestTrue(TEXT("InitializeGameplayProgression succeeds"),
+		GameplaySub->InitializeGameplayProgression());
+
+	// 4. Verify story and quest states remain untouched
+	TestEqual(TEXT("Story state must remain Active"),
+		StorySub->GetStoryState(TestStoryId), EShadowSlaveStoryState::Active);
+	TestEqual(TEXT("Quest state must remain Available"),
+		QuestSub->GetQuestState(TestQuestId), EShadowSlaveQuestState::Available);
+
+	// 5. Verify StartGameplaySession also preserves existing story and quest states
+	TestTrue(TEXT("StartGameplaySession succeeds"), GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("Story state remains Active after StartGameplaySession"),
+		StorySub->GetStoryState(TestStoryId), EShadowSlaveStoryState::Active);
+	TestEqual(TEXT("Quest state remains Available after StartGameplaySession"),
+		QuestSub->GetQuestState(TestQuestId), EShadowSlaveQuestState::Available);
 
 	return true;
 }

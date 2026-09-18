@@ -77,6 +77,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Gameplay|Flow")
 	bool StartGameplaySession(APlayerController* InPlayerController = nullptr, APawn* InPlayerPawn = nullptr);
 
+	/**
+	 * Ensures runtime progression infrastructure (Story, Quest, Dialogue, Nightmare bridges) is initialized.
+	 * Idempotent, safe to call repeatedly, and never resets existing story/quest state or flow.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Gameplay|Progression")
+	bool InitializeGameplayProgression();
+
+	/** Returns true if runtime gameplay progression infrastructure has been initialized */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Gameplay|Progression")
+	bool IsGameplayProgressionInitialized() const { return bIsProgressionInitialized; }
+
 	/** Initiates baseline world exploration flow */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Gameplay|Flow")
 	bool BeginExploration();
@@ -241,6 +252,10 @@ protected:
 
 	/** Re-entrancy guard */
 	bool bIsProcessingFlowTransition = false;
+
+	/** Tracks whether runtime progression infrastructure has been initialized */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Gameplay")
+	bool bIsProgressionInitialized = false;
 
 	/* --- Internal Event Handlers --- */
 

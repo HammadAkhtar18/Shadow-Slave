@@ -22,6 +22,7 @@ UShadowSlaveGameplaySubsystem::UShadowSlaveGameplaySubsystem()
 	, PreviousFlowState(EShadowSlaveGameplayFlowState::None)
 	, ActiveNightmareScenarioId(NAME_None)
 	, bIsProcessingFlowTransition(false)
+	, bIsProgressionInitialized(false)
 {
 }
 
@@ -38,6 +39,7 @@ void UShadowSlaveGameplaySubsystem::Initialize(FSubsystemCollectionBase& Collect
 	PreviousFlowState = EShadowSlaveGameplayFlowState::None;
 	ActiveNightmareScenarioId = NAME_None;
 	bIsProcessingFlowTransition = false;
+	bIsProgressionInitialized = false;
 
 	// Bind to authoritative ConversationSubsystem if available
 	if (UShadowSlaveConversationSubsystem* ConvSub = GetConversationSubsystem())
@@ -96,6 +98,7 @@ void UShadowSlaveGameplaySubsystem::Deinitialize()
 	CurrentInteractionTarget.Reset();
 	CurrentConversationSpeaker.Reset();
 	CurrentCombatInstigator.Reset();
+	bIsProgressionInitialized = false;
 
 	Super::Deinitialize();
 }
@@ -222,13 +225,16 @@ bool UShadowSlaveGameplaySubsystem::StartGameplaySession(APlayerController* InPl
 		ResolvePlayerContext();
 	}
 
-	// 2. Handle repeated startup idempotently if already in Exploration
+	// 2. Ensure runtime progression infrastructure is initialized
+	InitializeGameplayProgression();
+
+	// 3. Handle repeated startup idempotently if already in Exploration
 	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Exploration)
 	{
 		return true;
 	}
 
-	// 3. Preserve any ongoing active gameplay flow without resetting or stomping state
+	// 4. Preserve any ongoing active gameplay flow without resetting or stomping state
 	if (CurrentFlowState != EShadowSlaveGameplayFlowState::None && CurrentFlowState != EShadowSlaveGameplayFlowState::Unknown)
 	{
 		UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveGameplaySubsystem::StartGameplaySession - Active session already in progress (State: %d); preserving flow."),
@@ -236,8 +242,32 @@ bool UShadowSlaveGameplaySubsystem::StartGameplaySession(APlayerController* InPl
 		return true;
 	}
 
-	// 4. Baseline transition into Exploration flow
+	// 5. Baseline transition into Exploration flow
 	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+}
+
+bool UShadowSlaveGameplaySubsystem::InitializeGameplayProgression()
+{
+	// 1. Ensure the authoritative StorySubsystem progression bridge is initialized
+	if (UShadowSlaveStorySubsystem* StorySub = GetStorySubsystem())
+	{
+		if (!StorySub->IsProgressionBridgeActive())
+		{
+			StorySub->InitializeProgressionBridge();
+		}
+	}
+
+	// 2. Synchronize player context to QuestSubsystem if player pawn is already registered
+	if (CurrentPlayerPawn.IsValid())
+	{
+		if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+		{
+			QuestSub->RegisterPlayerContext(CurrentPlayerPawn.Get());
+		}
+	}
+
+	bIsProgressionInitialized = true;
+	return true;
 }
 
 bool UShadowSlaveGameplaySubsystem::BeginExploration()
