@@ -6,17 +6,19 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Story/ShadowSlaveStoryTypes.h"
 #include "Story/ShadowSlaveStoryDefinition.h"
+#include "Story/ShadowSlaveStoryContentTypes.h"
+#include "Story/ShadowSlaveStoryContentDefinition.h"
 #include "ShadowSlaveStorySubsystem.generated.h"
 
 /**
  * Game Instance Subsystem responsible for authoritative story progression and narrative beat lifecycle.
  *
  * RESPONSIBILITIES:
- * - Registers static story definitions.
+ * - Registers static story definitions and story content definitions (chapters/arcs).
  * - Tracks runtime lifecycle state (Locked, Available, Active, Completed, Failed, Skipped).
  * - Enforces deterministic transition guards and prerequisite completion checks.
- * - Manages active story steps within Active stories.
- * - Emits progression event streams only when state or step genuinely changes.
+ * - Manages active story steps and chronological content entries.
+ * - Emits progression event streams only when state or entry genuinely changes.
  * - Exports and imports passive, decoupled save data with zero event emission during restoration.
  * - Operates event-driven with zero Tick overhead.
  */
@@ -49,7 +51,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|Registration")
 	bool HasStoryDefinition(FName StoryId) const;
 
-	/* --- State Queries --- */
+	/* --- Story Content Definition Registration (Step 25) --- */
+
+	/** Registers a static story content definition (chapter/arc) with the subsystem */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentRegistration")
+	bool RegisterStoryContentDefinition(UShadowSlaveStoryContentDefinition* ContentDef);
+
+	/** Unregisters a story content definition */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentRegistration")
+	bool UnregisterStoryContentDefinition(FName StoryContentId);
+
+	/** Retrieves a registered story content definition by StoryContentId */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentRegistration")
+	UShadowSlaveStoryContentDefinition* GetStoryContentDefinition(FName StoryContentId) const;
+
+	/** Returns true if a story content definition is registered for StoryContentId */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentRegistration")
+	bool HasStoryContentDefinition(FName StoryContentId) const;
+
+	/* --- Story State Queries --- */
 
 	/** Queries the current lifecycle state of a story */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|State")
@@ -71,7 +91,45 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|State")
 	bool GetStoryRuntimeState(FName StoryId, FShadowSlaveStoryRuntimeState& OutState) const;
 
-	/* --- State Transitions --- */
+	/* --- Story Content State Queries (Step 25) --- */
+
+	/** Queries the current lifecycle state of a story content chapter or arc */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	EShadowSlaveStoryContentState GetStoryContentState(FName StoryContentId) const;
+
+	/** Returns true if the story content is currently Active */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool IsStoryContentActive(FName StoryContentId) const;
+
+	/** Returns true if the story content is Completed */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool IsStoryContentCompleted(FName StoryContentId) const;
+
+	/** Evaluates whether all prerequisite story content units are in Completed state */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool AreStoryContentPrerequisitesSatisfied(FName StoryContentId) const;
+
+	/** Retrieves complete runtime state for a story content chapter or arc */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool GetStoryContentRuntimeState(FName StoryContentId, FShadowSlaveStoryContentRuntimeState& OutState) const;
+
+	/** Queries the current lifecycle state of an individual content entry within a story content */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	EShadowSlaveStoryContentState GetStoryContentEntryState(FName StoryContentId, FName EntryId) const;
+
+	/** Evaluates whether all prerequisite content entries for an entry are in Completed state */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool AreStoryContentEntryPrerequisitesSatisfied(FName StoryContentId, FName EntryId) const;
+
+	/** Retrieves the currently active content entry ID for an active story content chapter/arc */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	FName GetCurrentActiveStoryContentEntry(FName StoryContentId) const;
+
+	/** Returns true if all non-optional content entries within the story content are Completed */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|ContentState")
+	bool AreAllRequiredContentEntriesCompleted(FName StoryContentId) const;
+
+	/* --- Story State Transitions --- */
 
 	/**
 	 * Transitions a story to a new lifecycle state following transition safety rules.
@@ -94,6 +152,62 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Transitions")
 	void ResetAllStoryStates();
 
+	/* --- Story Content State Transitions (Step 25) --- */
+
+	/** Transitions a story content chapter/arc to a new lifecycle state */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool SetStoryContentState(FName StoryContentId, EShadowSlaveStoryContentState NewState);
+
+	/** Helper to transition story content to Active */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool ActivateStoryContent(FName StoryContentId);
+
+	/** Helper to transition story content to Completed */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool CompleteStoryContent(FName StoryContentId);
+
+	/** Helper to transition story content to Failed */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool FailStoryContent(FName StoryContentId);
+
+	/** Helper to transition story content to Skipped */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool SkipStoryContent(FName StoryContentId);
+
+	/** Explicit administrative reset API for story content (allows reset to Locked or Available) */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool ResetStoryContentState(FName StoryContentId, EShadowSlaveStoryContentState ResetToState = EShadowSlaveStoryContentState::Locked);
+
+	/** Resets all tracked runtime story content states */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	void ResetAllStoryContentStates();
+
+	/* --- Story Content Entry Transitions (Step 25) --- */
+
+	/** Transitions a child content entry to a new lifecycle state */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool SetStoryContentEntryState(FName StoryContentId, FName EntryId, EShadowSlaveStoryContentState NewState);
+
+	/** Helper to transition content entry to Active */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool ActivateStoryContentEntry(FName StoryContentId, FName EntryId);
+
+	/** Helper to transition content entry to Completed */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool CompleteStoryContentEntry(FName StoryContentId, FName EntryId);
+
+	/** Helper to transition content entry to Failed */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool FailStoryContentEntry(FName StoryContentId, FName EntryId);
+
+	/** Helper to transition content entry to Skipped */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool SkipStoryContentEntry(FName StoryContentId, FName EntryId);
+
+	/** Explicitly sets the currently active entry ID on an Active story content */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
+	bool SetCurrentActiveStoryContentEntry(FName StoryContentId, FName EntryId);
+
 	/* --- Story Step Support --- */
 
 	/**
@@ -109,7 +223,7 @@ public:
 
 	/* --- Save & Persistence --- */
 
-	/** Exports passive save data for story progression */
+	/** Exports passive save data for story progression and story content */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Save")
 	FShadowSlaveStorySaveData ExportSaveData() const;
 
@@ -127,6 +241,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Story|Events")
 	FOnShadowSlaveStoryStepChangedSignature OnStoryStepChanged;
 
+	/** Broadcast when a story content's overall lifecycle state genuinely changes */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Story|Events")
+	FOnShadowSlaveStoryContentStateChangedSignature OnStoryContentStateChanged;
+
+	/** Broadcast when an individual story content entry's lifecycle state genuinely changes */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Story|Events")
+	FOnShadowSlaveStoryContentEntryStateChangedSignature OnStoryContentEntryStateChanged;
+
 protected:
 	/** Static story definitions registered by StoryId */
 	UPROPERTY(Transient)
@@ -136,9 +258,26 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Story")
 	TMap<FName, FShadowSlaveStoryRuntimeState> StoryRuntimeStates;
 
+	/** Static story content definitions registered by StoryContentId */
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UShadowSlaveStoryContentDefinition>> RegisteredContentDefinitions;
+
+	/** Mutable runtime story content state indexed by StoryContentId */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Story|Content")
+	TMap<FName, FShadowSlaveStoryContentRuntimeState> StoryContentRuntimeStates;
+
 	/** Internal flag indicating save data restoration is in progress (suppresses gameplay events) */
 	bool bIsRestoringState = false;
 
 	/** Internal helper to determine if a transition from CurrentState to NewState is permitted */
 	bool CanTransition(FName StoryId, EShadowSlaveStoryState CurrentState, EShadowSlaveStoryState NewState) const;
+
+	/** Internal helper to initialize entry states from a content definition */
+	void InitializeRuntimeContentEntries(FShadowSlaveStoryContentRuntimeState& RuntimeState, const UShadowSlaveStoryContentDefinition* ContentDef) const;
+
+	/** Internal helper to determine if a transition for story content is permitted */
+	bool CanTransitionStoryContent(FName StoryContentId, EShadowSlaveStoryContentState CurrentState, EShadowSlaveStoryContentState NewState) const;
+
+	/** Internal helper to determine if a transition for a content entry is permitted */
+	bool CanTransitionStoryContentEntry(FName StoryContentId, FName EntryId, EShadowSlaveStoryContentState CurrentState, EShadowSlaveStoryContentState NewState) const;
 };

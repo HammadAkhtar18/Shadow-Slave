@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Story/ShadowSlaveStoryContentTypes.h"
 #include "ShadowSlaveStoryTypes.generated.h"
 
 /**
@@ -126,6 +127,10 @@ struct SHADOWSLAVE_API FShadowSlaveStorySaveData
 	/** Ordered list of story state records */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Story|Save")
 	TArray<FShadowSlaveStoryRecordSaveData> Stories;
+
+	/** Ordered list of story content (chapter/arc) state records */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Story|Save")
+	TArray<FShadowSlaveStoryContentRecordSaveData> StoryContents;
 
 	/** Validity flag */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Story|Save")
