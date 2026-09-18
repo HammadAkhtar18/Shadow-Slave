@@ -1084,7 +1084,10 @@ bool UShadowSlaveQuestSubsystem::ImportSaveData(const FShadowSlaveQuestSaveData&
 		DesiredQuestStates.Add(SavedRecord.QuestId, SavedRecord.State);
 	}
 
-	// Pass 2: Sanitize quest states based on prerequisites
+	// Pass 2: Reconcile and sanitize quest states against prerequisites and restored objectives
+	// Phase 2A: Resolve terminal states and Active-to-terminal normalizations first so prerequisite checks can observe them
+	TMap<FName, EShadowSlaveQuestState> FinalQuestStates;
+
 	for (const auto& Pair : DesiredQuestStates)
 	{
 		const FName QuestId = Pair.Key;
@@ -1095,40 +1098,150 @@ bool UShadowSlaveQuestSubsystem::ImportSaveData(const FShadowSlaveQuestSaveData&
 			continue;
 		}
 
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId);
+		if (!Def)
+		{
+			continue;
+		}
+
 		if (DesiredState == EShadowSlaveQuestState::Completed ||
 		    DesiredState == EShadowSlaveQuestState::Failed ||
-		    DesiredState == EShadowSlaveQuestState::Abandoned ||
-		    DesiredState == EShadowSlaveQuestState::Locked)
+		    DesiredState == EShadowSlaveQuestState::Abandoned)
 		{
+			FinalQuestStates.Add(QuestId, DesiredState);
 			RuntimeEntry->State = DesiredState;
 		}
-		else if (DesiredState == EShadowSlaveQuestState::Available || DesiredState == EShadowSlaveQuestState::Active)
+		else if (DesiredState == EShadowSlaveQuestState::Active)
 		{
-			// A quest with unsatisfied prerequisites must NOT be restored as Available or Active
+			// Case 1 — Mandatory objective failed:
+			// If any non-optional objective is Failed, restore the quest as Failed
+			if (RuntimeEntry->HasAnyRequiredObjectiveFailed())
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as Active but has failed mandatory objectives; normalizing to Failed."),
+					*QuestId.ToString());
+				FinalQuestStates.Add(QuestId, EShadowSlaveQuestState::Failed);
+				RuntimeEntry->State = EShadowSlaveQuestState::Failed;
+			}
+			// Case 2 — All required objectives completed:
+			// If all non-optional objectives are Completed and auto-complete is enabled, restore as Completed
+			else if (RuntimeEntry->AreAllRequiredObjectivesComplete() && Def->bAutoCompleteWhenObjectivesComplete)
+			{
+				UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as Active with all required objectives completed; normalizing to Completed."),
+					*QuestId.ToString());
+				FinalQuestStates.Add(QuestId, EShadowSlaveQuestState::Completed);
+				RuntimeEntry->State = EShadowSlaveQuestState::Completed;
+			}
+		}
+	}
+
+	// Phase 2B: Resolve remaining non-terminal quests with prerequisite evaluation and objective normalization
+	for (const auto& Pair : DesiredQuestStates)
+	{
+		const FName QuestId = Pair.Key;
+		const EShadowSlaveQuestState DesiredState = Pair.Value;
+		FShadowSlaveQuestRuntimeState* RuntimeEntry = QuestRuntimeStates.Find(QuestId);
+		if (!RuntimeEntry)
+		{
+			continue;
+		}
+
+		// If already finalized in Phase 2A (terminal), skip
+		if (FinalQuestStates.Contains(QuestId))
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId);
+		if (!Def)
+		{
+			continue;
+		}
+
+		if (DesiredState == EShadowSlaveQuestState::Active)
+		{
+			// Case 3 — Quest remains Active
+			// Prerequisites must be satisfied to restore as Active
 			if (ArePrerequisitesSatisfied(QuestId))
 			{
-				RuntimeEntry->State = DesiredState;
+				RuntimeEntry->State = EShadowSlaveQuestState::Active;
+
+				// Under an Active quest: every objective that is neither Completed nor Failed must be Active.
+				// No objective may remain Inactive under an Active quest.
+				for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
+				{
+					if (ObjPair.Value.State != EShadowSlaveObjectiveState::Completed &&
+					    ObjPair.Value.State != EShadowSlaveObjectiveState::Failed)
+					{
+						ObjPair.Value.State = EShadowSlaveObjectiveState::Active;
+					}
+				}
 			}
 			else
 			{
-				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as state %d but prerequisites are not satisfied; falling back to Locked."),
-					*QuestId.ToString(), static_cast<uint8>(DesiredState));
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as Active but prerequisites are not satisfied; falling back to Locked."),
+					*QuestId.ToString());
 				RuntimeEntry->State = EShadowSlaveQuestState::Locked;
 
-				// Demote any active objectives to Inactive if quest fell back to Locked
+				// Case 4 — Quest is Locked: objectives that are not terminal should be Inactive
 				for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
 				{
-					if (ObjPair.Value.State == EShadowSlaveObjectiveState::Active)
+					if (ObjPair.Value.State != EShadowSlaveObjectiveState::Completed &&
+					    ObjPair.Value.State != EShadowSlaveObjectiveState::Failed)
 					{
 						ObjPair.Value.State = EShadowSlaveObjectiveState::Inactive;
 					}
 				}
 			}
 		}
+		else if (DesiredState == EShadowSlaveQuestState::Available)
+		{
+			if (ArePrerequisitesSatisfied(QuestId))
+			{
+				RuntimeEntry->State = EShadowSlaveQuestState::Available;
+			}
+			else
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as Available but prerequisites are not satisfied; falling back to Locked."),
+					*QuestId.ToString());
+				RuntimeEntry->State = EShadowSlaveQuestState::Locked;
+			}
+
+			// Case 4 — Quest is Available or Locked: objectives that are not terminal should be Inactive
+			for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
+			{
+				if (ObjPair.Value.State != EShadowSlaveObjectiveState::Completed &&
+				    ObjPair.Value.State != EShadowSlaveObjectiveState::Failed)
+				{
+					ObjPair.Value.State = EShadowSlaveObjectiveState::Inactive;
+				}
+			}
+		}
+		else if (DesiredState == EShadowSlaveQuestState::Locked)
+		{
+			RuntimeEntry->State = EShadowSlaveQuestState::Locked;
+
+			// Case 4 — Quest is Locked: objectives that are not terminal should be Inactive
+			for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
+			{
+				if (ObjPair.Value.State != EShadowSlaveObjectiveState::Completed &&
+				    ObjPair.Value.State != EShadowSlaveObjectiveState::Failed)
+				{
+					ObjPair.Value.State = EShadowSlaveObjectiveState::Inactive;
+				}
+			}
+		}
 		else
 		{
-			// Malformed state: fall back to Locked
+			// Malformed state: fall back to Locked with Inactive objectives
 			RuntimeEntry->State = EShadowSlaveQuestState::Locked;
+			for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
+			{
+				if (ObjPair.Value.State != EShadowSlaveObjectiveState::Completed &&
+				    ObjPair.Value.State != EShadowSlaveObjectiveState::Failed)
+				{
+					ObjPair.Value.State = EShadowSlaveObjectiveState::Inactive;
+				}
+			}
 		}
 	}
 
