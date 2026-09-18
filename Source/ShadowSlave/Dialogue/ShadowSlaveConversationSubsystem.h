@@ -145,11 +145,17 @@ public:
 
 	/* --- Save / Load Snapshots --- */
 
-	/** Captures serializable passive snapshot of current conversation runtime state */
+	/**
+	 * Captures a serializable passive snapshot of durable runtime variables.
+	 * Active display state is intentionally omitted because it depends on transient actor context.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Dialogue|Save")
 	void CaptureConversationState(FShadowSlaveConversationSaveData& OutSaveData) const;
 
-	/** Restores conversation runtime state from passive save data */
+	/**
+	 * Restores a passive runtime-variable snapshot without emitting conversation events.
+	 * Returns false without mutating runtime state for invalid, active-session, or re-entrant input.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Dialogue|Save")
 	bool RestoreConversationState(const FShadowSlaveConversationSaveData& InSaveData, UShadowSlaveDialogueDefinition* InDialogueDef = nullptr);
 

@@ -630,47 +630,39 @@ void UShadowSlaveConversationSubsystem::ClearRuntimeVariables()
 
 void UShadowSlaveConversationSubsystem::CaptureConversationState(FShadowSlaveConversationSaveData& OutSaveData) const
 {
-	OutSaveData.DialogueId = ActiveDialogueDef ? ActiveDialogueDef->DialogueId : NAME_None;
-	OutSaveData.DialogueVersion = ActiveDialogueDef ? ActiveDialogueDef->Version : 1;
-	OutSaveData.CurrentNodeId = CurrentNodeId;
+	// A displayed conversation is presentation-bound: it owns transient speaker/interactor actor
+	// references, and DisplayNode would replay node-entry consequences during restoration. Persist
+	// only the durable variable state, which can safely survive across conversation sessions.
+	OutSaveData = FShadowSlaveConversationSaveData();
 	OutSaveData.RuntimeFlags = RuntimeFlags;
 	OutSaveData.RuntimeNumericValues = RuntimeNumericValues;
 	OutSaveData.RuntimeMetadata = RuntimeMetadata;
-	OutSaveData.bIsActive = IsConversationActive();
+	OutSaveData.bIsValid = true;
 }
 
-bool UShadowSlaveConversationSubsystem::RestoreConversationState(const FShadowSlaveConversationSaveData& InSaveData, UShadowSlaveDialogueDefinition* InDialogueDef)
+bool UShadowSlaveConversationSubsystem::RestoreConversationState(const FShadowSlaveConversationSaveData& InSaveData, UShadowSlaveDialogueDefinition* /*InDialogueDef*/)
 {
-	RuntimeFlags = InSaveData.RuntimeFlags;
-	RuntimeNumericValues = InSaveData.RuntimeNumericValues;
-	RuntimeMetadata = InSaveData.RuntimeMetadata;
-
-	if (!InSaveData.bIsActive)
+	if (!InSaveData.bIsValid)
 	{
-		ResetState();
-		return true;
-	}
-
-	if (!InDialogueDef || InDialogueDef->DialogueId != InSaveData.DialogueId)
-	{
-		UE_LOG(LogShadowSlave, Warning, TEXT("RestoreConversationState: Mismatched or null dialogue definition for saved dialogue '%s'."),
-			*InSaveData.DialogueId.ToString());
-		ResetState();
+		UE_LOG(LogShadowSlave, Warning, TEXT("RestoreConversationState: Save data is not a valid passive dialogue snapshot."));
 		return false;
 	}
 
-	ActiveDialogueDef = InDialogueDef;
-	const FShadowSlaveDialogueNode* TargetNode = InDialogueDef->FindNode(InSaveData.CurrentNodeId);
-	if (!TargetNode)
+	if (InSaveData.bIsActive)
 	{
-		TargetNode = InDialogueDef->FindNode(InDialogueDef->StartingNodeId);
+		UE_LOG(LogShadowSlave, Warning, TEXT("RestoreConversationState: Active dialogue sessions are not restorable because their transient actor context and entry consequences cannot be resumed safely."));
+		return false;
 	}
 
-	if (TargetNode)
+	if (bIsProcessingStep || IsConversationActive())
 	{
-		return DisplayNode(*TargetNode);
+		UE_LOG(LogShadowSlave, Warning, TEXT("RestoreConversationState: Cannot restore passive dialogue data while a conversation is active or processing."));
+		return false;
 	}
 
+	RuntimeFlags = InSaveData.RuntimeFlags;
+	RuntimeNumericValues = InSaveData.RuntimeNumericValues;
+	RuntimeMetadata = InSaveData.RuntimeMetadata;
 	ResetState();
-	return false;
+	return true;
 }

@@ -246,13 +246,20 @@ struct SHADOWSLAVE_API FShadowSlaveDialogueNode
 };
 
 /**
- * Lightweight serializable snapshot for conversation state persistence.
+ * Lightweight serializable snapshot for durable dialogue runtime variables.
+ *
+ * This deliberately does not resume an actively displayed conversation: its speaker/interactor
+ * actor references are transient, and redisplaying a node would replay entry consequences.
  * Completely decoupled from static DataAsset definitions and contains zero raw UObject pointers.
  */
 USTRUCT(BlueprintType)
 struct SHADOWSLAVE_API FShadowSlaveConversationSaveData
 {
 	GENERATED_BODY()
+
+	/** Whether this is a valid passive snapshot. False preserves backwards compatibility with older saves. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Dialogue|Save")
+	bool bIsValid = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Dialogue|Save")
 	FName DialogueId = NAME_None;
@@ -272,6 +279,10 @@ struct SHADOWSLAVE_API FShadowSlaveConversationSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Dialogue|Save")
 	TMap<FName, FString> RuntimeMetadata;
 
+	/**
+	 * Reserved for legacy data validation. Current capture never serializes an active session,
+	 * so this must be false for a restorable snapshot.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Dialogue|Save")
 	bool bIsActive = false;
 };

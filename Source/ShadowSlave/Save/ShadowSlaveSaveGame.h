@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Save/ShadowSlaveSaveTypes.h"
+#include "Dialogue/ShadowSlaveDialogueTypes.h"
 #include "Nightmares/ShadowSlaveNightmareSaveTypes.h"
 #include "Story/ShadowSlaveStoryTypes.h"
 #include "Gameplay/ShadowSlaveQuestTypes.h"
@@ -100,6 +101,10 @@ public:
 	/** Serialized snapshot of quest and objective progression state */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Quests")
 	FShadowSlaveQuestSaveData QuestData;
+
+	/** Serialized passive dialogue runtime variables; active conversation presentation is intentionally excluded. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Dialogue")
+	FShadowSlaveConversationSaveData ConversationData;
 
 	/* --- Validation Helpers --- */
 

@@ -134,4 +134,72 @@ bool FShadowSlaveDialogueUnknownCharacterRankTest::RunTest(const FString& Parame
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveDialoguePassiveSaveRoundTripTest,
+	"ShadowSlave.Dialogue.PassiveSaveRestoresDurableRuntimeVariables",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveDialoguePassiveSaveRoundTripTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveConversationSubsystem* Source = NewObject<UShadowSlaveConversationSubsystem>();
+	UShadowSlaveConversationSubsystem* Destination = NewObject<UShadowSlaveConversationSubsystem>();
+	TestNotNull(TEXT("Source conversation subsystem must instantiate"), Source);
+	TestNotNull(TEXT("Destination conversation subsystem must instantiate"), Destination);
+	if (!Source || !Destination)
+	{
+		return false;
+	}
+
+	Source->SetRuntimeFlag(FName(TEXT("Flag_GateOpened")), true);
+	Source->SetRuntimeNumericValue(FName(TEXT("Reputation")), 12.5f);
+	Source->SetRuntimeMetadata(FName(TEXT("LastContact")), TEXT("TestNPC"));
+
+	FShadowSlaveConversationSaveData SaveData;
+	Source->CaptureConversationState(SaveData);
+	TestTrue(TEXT("Captured passive dialogue data must be valid"), SaveData.bIsValid);
+	TestFalse(TEXT("Captured dialogue data must never request active-session restoration"), SaveData.bIsActive);
+	TestTrue(TEXT("Captured dialogue data must omit transient dialogue identity"), SaveData.DialogueId.IsNone());
+	TestTrue(TEXT("Captured dialogue data must omit transient node identity"), SaveData.CurrentNodeId.IsNone());
+
+	Destination->SetRuntimeFlag(FName(TEXT("Flag_GateOpened")), false);
+	TestTrue(TEXT("Passive dialogue data must restore"), Destination->RestoreConversationState(SaveData));
+	TestFalse(TEXT("Restore must leave the conversation inactive"), Destination->IsConversationActive());
+	TestTrue(TEXT("Restored flag must match the captured value"), Destination->GetRuntimeFlag(FName(TEXT("Flag_GateOpened"))));
+	TestNearlyEqual(TEXT("Restored numeric value must match the captured value"), Destination->GetRuntimeNumericValue(FName(TEXT("Reputation"))), 12.5f, 0.001f);
+	TestEqual(TEXT("Restored metadata must match the captured value"), Destination->GetRuntimeMetadata(FName(TEXT("LastContact"))), FString(TEXT("TestNPC")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveDialogueActiveSaveRejectionTest,
+	"ShadowSlave.Dialogue.ActiveSaveDataIsRejectedWithoutMutation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveDialogueActiveSaveRejectionTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveConversationSubsystem* ConvSub = NewObject<UShadowSlaveConversationSubsystem>();
+	TestNotNull(TEXT("Conversation subsystem must instantiate"), ConvSub);
+	if (!ConvSub)
+	{
+		return false;
+	}
+
+	const FName ExistingFlag(TEXT("Flag_Existing"));
+	ConvSub->SetRuntimeFlag(ExistingFlag, true);
+
+	FShadowSlaveConversationSaveData UnsupportedActiveSave;
+	UnsupportedActiveSave.bIsValid = true;
+	UnsupportedActiveSave.bIsActive = true;
+	UnsupportedActiveSave.RuntimeFlags.Add(FName(TEXT("Flag_Unexpected")), true);
+
+	TestFalse(TEXT("Active dialogue save data must be rejected"), ConvSub->RestoreConversationState(UnsupportedActiveSave));
+	TestTrue(TEXT("Rejected data must not mutate existing runtime variables"), ConvSub->GetRuntimeFlag(ExistingFlag));
+	TestFalse(TEXT("Rejected data must not introduce new runtime variables"), ConvSub->GetRuntimeFlag(FName(TEXT("Flag_Unexpected"))));
+
+	return true;
+}
+
 #endif // WITH_AUTOMATION_TESTS

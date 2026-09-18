@@ -23,6 +23,7 @@
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Dialogue/ShadowSlaveConversationSubsystem.h"
 #include "World/ShadowSlaveWorldStateComponent.h"
 #include "ShadowSlave.h"
 
@@ -206,6 +207,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		{
 			SaveObject->QuestData = QuestSub->ExportSaveData();
 		}
+
+		if (UShadowSlaveConversationSubsystem* ConversationSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+		{
+			ConversationSub->CaptureConversationState(SaveObject->ConversationData);
+		}
 	}
 
 	return SaveObject;
@@ -217,6 +223,21 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 	if (!SaveGame || !SaveGame->IsCompatibleVersion())
 	{
 		return false;
+	}
+
+	// Validate the passive dialogue restore boundary before mutating any other runtime state.
+	// Active conversation presentation cannot be resumed safely, and an unavailable conversation
+	// authority must not be reported as a successful load.
+	UShadowSlaveConversationSubsystem* ConversationSub = nullptr;
+	if (SaveGame->ConversationData.bIsValid)
+	{
+		UGameInstance* GI = GetGameInstance();
+		ConversationSub = GI ? GI->GetSubsystem<UShadowSlaveConversationSubsystem>() : nullptr;
+		if (!ConversationSub || SaveGame->ConversationData.bIsActive || ConversationSub->IsConversationActive())
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("ApplySaveSnapshot: Passive dialogue data cannot be restored while conversation authority is unavailable or an active conversation is present."));
+			return false;
+		}
 	}
 
 	// 2. Player Transform restoration
@@ -319,6 +340,13 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 				QuestSub->ImportSaveData(SaveGame->QuestData);
 			}
 		}
+	}
+
+	// 12. Passive dialogue runtime variables (no dialogue node display or conversation events)
+	if (ConversationSub && !ConversationSub->RestoreConversationState(SaveGame->ConversationData))
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("ApplySaveSnapshot: Failed to restore passive dialogue runtime data."));
+		return false;
 	}
 
 	return true;
