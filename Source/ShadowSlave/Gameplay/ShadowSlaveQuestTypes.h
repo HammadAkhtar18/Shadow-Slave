@@ -315,6 +315,10 @@ struct SHADOWSLAVE_API FShadowSlaveQuestSaveData
 
 /* --- Delegate Declarations --- */
 
+/**
+ * Broadcast when a quest's lifecycle state genuinely changes.
+ * Parameter order follows the established project convention: (QuestId, NewState, OldState).
+ */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	FOnShadowSlaveQuestStateChangedSignature,
 	FName, QuestId,
@@ -322,6 +326,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	EShadowSlaveQuestState, OldState
 );
 
+/**
+ * Broadcast when an objective's lifecycle state genuinely changes.
+ * Parameter order follows the established project convention: (QuestId, ObjectiveId, NewState, OldState).
+ */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	FOnShadowSlaveObjectiveStateChangedSignature,
 	FName, QuestId,
@@ -330,6 +338,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	EShadowSlaveObjectiveState, OldState
 );
 
+/**
+ * Broadcast when an objective's progress quantity genuinely changes.
+ * Parameter order follows the established project convention: (QuestId, ObjectiveId, NewProgress, OldProgress).
+ */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	FOnShadowSlaveObjectiveProgressChangedSignature,
 	FName, QuestId,
@@ -338,11 +350,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	int32, OldProgress
 );
 
+/**
+ * Broadcast when a quest is completed.
+ */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnShadowSlaveQuestCompletedSignature,
 	FName, QuestId
 );
 
+/**
+ * Broadcast when a quest is failed.
+ */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnShadowSlaveQuestFailedSignature,
 	FName, QuestId

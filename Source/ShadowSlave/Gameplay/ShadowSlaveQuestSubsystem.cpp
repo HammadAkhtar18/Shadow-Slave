@@ -32,8 +32,43 @@ void UShadowSlaveQuestSubsystem::Deinitialize()
 
 bool UShadowSlaveQuestSubsystem::RegisterQuestDefinition(UShadowSlaveQuestDefinition* QuestDef)
 {
-	if (!QuestDef || QuestDef->QuestId.IsNone())
+	if (!QuestDef)
 	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - QuestDef is null."));
+		return false;
+	}
+
+	if (QuestDef->QuestId.IsNone())
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - QuestDef has invalid None QuestId."));
+		return false;
+	}
+
+	// Required correction 1: Validate definitions before registration
+	TArray<FText> ValidationErrors;
+	if (!QuestDef->ValidateDefinition(ValidationErrors))
+	{
+		for (const FText& Err : ValidationErrors)
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - Validation failure on quest '%s': %s"),
+				*QuestDef->QuestId.ToString(), *Err.ToString());
+		}
+		return false;
+	}
+
+	// Required correction 2: Reject QuestId conflicts
+	if (const TObjectPtr<UShadowSlaveQuestDefinition>* ExistingDef = RegisteredDefinitions.Find(QuestDef->QuestId))
+	{
+		if (ExistingDef->Get() == QuestDef)
+		{
+			// Idempotent re-registration of the exact same definition object
+			return true;
+		}
+
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - Conflict: QuestId '%s' is already registered with a different definition object ('%s' vs '%s')."),
+			*QuestDef->QuestId.ToString(),
+			ExistingDef->Get() ? *ExistingDef->Get()->GetName() : TEXT("null"),
+			*QuestDef->GetName());
 		return false;
 	}
 
@@ -121,6 +156,7 @@ bool UShadowSlaveQuestSubsystem::IsQuestAbandoned(FName QuestId) const
 
 bool UShadowSlaveQuestSubsystem::ArePrerequisitesSatisfied(FName QuestId) const
 {
+	// Required correction 3: Prerequisite evaluation must fail closed
 	if (QuestId.IsNone())
 	{
 		return false;
@@ -129,16 +165,25 @@ bool UShadowSlaveQuestSubsystem::ArePrerequisitesSatisfied(FName QuestId) const
 	const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId);
 	if (!Def)
 	{
-		return true;
+		// Fail closed: missing QuestDefinition cannot be satisfied
+		return false;
 	}
 
 	for (const FName& PrereqId : Def->PrerequisiteQuestIds)
 	{
 		if (PrereqId.IsNone())
 		{
-			continue;
+			// Fail closed: invalid or empty prerequisite identifier
+			return false;
 		}
 
+		// Prerequisite quest definition must be registered
+		if (!HasQuestDefinition(PrereqId))
+		{
+			return false;
+		}
+
+		// Prerequisite quest must explicitly be in Completed state
 		if (GetQuestState(PrereqId) != EShadowSlaveQuestState::Completed)
 		{
 			return false;
@@ -315,15 +360,25 @@ FText UShadowSlaveQuestSubsystem::GetObjectiveDescription(FName QuestId, FName O
 
 bool UShadowSlaveQuestSubsystem::CanTransitionQuest(FName QuestId, EShadowSlaveQuestState CurrentState, EShadowSlaveQuestState NewState) const
 {
-	if (NewState == EShadowSlaveQuestState::Unknown)
+	// Required correction 4: Harden lifecycle transitions
+	if (QuestId.IsNone() || NewState == EShadowSlaveQuestState::Unknown)
 	{
 		return false;
 	}
 
-	// Idempotent transition is always permitted
+	// Idempotent: same state transition is always permitted
 	if (CurrentState == NewState)
 	{
 		return true;
+	}
+
+	// Any transition to Available or Active requires a valid registered definition
+	if (NewState == EShadowSlaveQuestState::Available || NewState == EShadowSlaveQuestState::Active)
+	{
+		if (!HasQuestDefinition(QuestId))
+		{
+			return false;
+		}
 	}
 
 	// Terminal states: Completed, Failed, and Abandoned cannot leave their state via normal SetQuestState
@@ -337,6 +392,7 @@ bool UShadowSlaveQuestSubsystem::CanTransitionQuest(FName QuestId, EShadowSlaveQ
 	switch (CurrentState)
 	{
 	case EShadowSlaveQuestState::Unknown:
+		// Unknown cannot transition to arbitrary operational states
 		if (NewState == EShadowSlaveQuestState::Locked)
 		{
 			return true;
@@ -393,18 +449,17 @@ bool UShadowSlaveQuestSubsystem::SetQuestState(FName QuestId, EShadowSlaveQuestS
 	FShadowSlaveQuestRuntimeState* FoundState = QuestRuntimeStates.Find(QuestId);
 	if (!FoundState)
 	{
-		if (const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId))
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId);
+		if (!Def)
 		{
-			FShadowSlaveQuestRuntimeState NewEntry(QuestId, EShadowSlaveQuestState::Locked);
-			InitializeRuntimeObjectives(NewEntry, Def);
-			QuestRuntimeStates.Add(QuestId, NewEntry);
-			FoundState = QuestRuntimeStates.Find(QuestId);
-		}
-		else
-		{
-			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetQuestState - Untracked quest ID '%s'"), *QuestId.ToString());
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetQuestState - Untracked quest ID '%s' with no registered definition."), *QuestId.ToString());
 			return false;
 		}
+
+		FShadowSlaveQuestRuntimeState NewEntry(QuestId, EShadowSlaveQuestState::Locked);
+		InitializeRuntimeObjectives(NewEntry, Def);
+		QuestRuntimeStates.Add(QuestId, NewEntry);
+		FoundState = QuestRuntimeStates.Find(QuestId);
 	}
 
 	const EShadowSlaveQuestState OldState = FoundState->State;
@@ -418,6 +473,18 @@ bool UShadowSlaveQuestSubsystem::SetQuestState(FName QuestId, EShadowSlaveQuestS
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetQuestState - Rejected invalid transition for '%s': %d -> %d"),
 			*QuestId.ToString(), static_cast<uint8>(OldState), static_cast<uint8>(NewState));
 		return false;
+	}
+
+	// Prevent promoting malformed runtime state to Active
+	if (NewState == EShadowSlaveQuestState::Active)
+	{
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId);
+		if (!Def || FoundState->ObjectiveStates.Num() == 0 || !ArePrerequisitesSatisfied(QuestId))
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetQuestState - Rejected transition to Active for '%s' due to missing definition, malformed objectives, or unsatisfied prerequisites."),
+				*QuestId.ToString());
+			return false;
+		}
 	}
 
 	if (bIsProcessingTransition)
@@ -575,6 +642,7 @@ void UShadowSlaveQuestSubsystem::ResetAllQuests()
 
 bool UShadowSlaveQuestSubsystem::SetObjectiveProgress(FName QuestId, FName ObjectiveId, int32 NewProgress)
 {
+	// Required correction 8: Harden runtime objective progression
 	if (QuestId.IsNone() || ObjectiveId.IsNone())
 	{
 		return false;
@@ -587,6 +655,7 @@ bool UShadowSlaveQuestSubsystem::SetObjectiveProgress(FName QuestId, FName Objec
 		return false;
 	}
 
+	// Progress mutation is only permitted on Active quests
 	if (FoundQuest->State != EShadowSlaveQuestState::Active)
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetObjectiveProgress - Cannot modify objective progress on non-active quest '%s' (State: %d)."),
@@ -602,17 +671,44 @@ bool UShadowSlaveQuestSubsystem::SetObjectiveProgress(FName QuestId, FName Objec
 		return false;
 	}
 
-	// Objectives on an active quest must be Active to record progress
+	// Failed objectives reject normal progress mutation
+	if (FoundObj->State == EShadowSlaveObjectiveState::Failed)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetObjectiveProgress - Cannot modify progress on failed objective '%s' in quest '%s'."),
+			*ObjectiveId.ToString(), *QuestId.ToString());
+		return false;
+	}
+
+	// Completed objectives: idempotent when asked to remain complete; reject reducing progress below RequiredQuantity
+	if (FoundObj->State == EShadowSlaveObjectiveState::Completed)
+	{
+		if (NewProgress >= FoundObj->RequiredQuantity)
+		{
+			return true; // Idempotent: already complete
+		}
+
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetObjectiveProgress - Rejected reducing progress on completed objective '%s' in quest '%s' (%d < %d)."),
+			*ObjectiveId.ToString(), *QuestId.ToString(), NewProgress, FoundObj->RequiredQuantity);
+		return false;
+	}
+
+	// Inactive objectives on an Active quest reject direct progress mutation (must be activated through normal quest activation)
 	if (FoundObj->State == EShadowSlaveObjectiveState::Inactive)
 	{
-		FoundObj->State = EShadowSlaveObjectiveState::Active;
-		if (!bIsRestoringState)
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::SetObjectiveProgress - Rejected progress mutation on inactive objective '%s' in quest '%s'."),
+			*ObjectiveId.ToString(), *QuestId.ToString());
+		return false;
+	}
+
+	// Recheck definition for authoritative RequiredQuantity
+	if (const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId))
+	{
+		if (const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjectiveId))
 		{
-			OnObjectiveStateChanged.Broadcast(QuestId, ObjectiveId, EShadowSlaveObjectiveState::Active, EShadowSlaveObjectiveState::Inactive);
+			FoundObj->RequiredQuantity = FMath::Max(1, ObjDef->RequiredQuantity);
 		}
 	}
 
-	// Clamping: progress cannot become negative and cannot exceed RequiredQuantity
 	const int32 TargetQuantity = FMath::Max(1, FoundObj->RequiredQuantity);
 	const int32 ClampedProgress = FMath::Clamp(NewProgress, 0, TargetQuantity);
 	const int32 OldProgress = FoundObj->CurrentQuantity;
@@ -652,14 +748,76 @@ bool UShadowSlaveQuestSubsystem::AddObjectiveProgress(FName QuestId, FName Objec
 		return false;
 	}
 
-	const int32 CurrentProgress = GetObjectiveProgress(QuestId, ObjectiveId);
-	return SetObjectiveProgress(QuestId, ObjectiveId, CurrentProgress + Amount);
+	FShadowSlaveObjectiveRuntimeState ObjRuntime;
+	if (!GetObjectiveRuntimeState(QuestId, ObjectiveId, ObjRuntime) || ObjRuntime.State != EShadowSlaveObjectiveState::Active)
+	{
+		return false;
+	}
+
+	return SetObjectiveProgress(QuestId, ObjectiveId, ObjRuntime.CurrentQuantity + Amount);
 }
 
 bool UShadowSlaveQuestSubsystem::CompleteObjective(FName QuestId, FName ObjectiveId)
 {
-	const int32 TargetQuantity = GetObjectiveRequiredQuantity(QuestId, ObjectiveId);
-	return SetObjectiveProgress(QuestId, ObjectiveId, TargetQuantity);
+	// Required correction 9: Recheck objective completion logic
+	if (QuestId.IsNone() || ObjectiveId.IsNone())
+	{
+		return false;
+	}
+
+	FShadowSlaveQuestRuntimeState* FoundQuest = QuestRuntimeStates.Find(QuestId);
+	if (!FoundQuest || FoundQuest->State != EShadowSlaveQuestState::Active)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::CompleteObjective - Cannot complete objective on non-active quest '%s'."),
+			*QuestId.ToString());
+		return false;
+	}
+
+	FShadowSlaveObjectiveRuntimeState* FoundObj = FoundQuest->ObjectiveStates.Find(ObjectiveId);
+	if (!FoundObj)
+	{
+		return false;
+	}
+
+	// Cannot complete a failed objective
+	if (FoundObj->State == EShadowSlaveObjectiveState::Failed)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::CompleteObjective - Cannot complete failed objective '%s' in quest '%s'."),
+			*ObjectiveId.ToString(), *QuestId.ToString());
+		return false;
+	}
+
+	if (FoundObj->State == EShadowSlaveObjectiveState::Completed)
+	{
+		return true; // Idempotent
+	}
+
+	// Recheck definition for authoritative RequiredQuantity
+	if (const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestId))
+	{
+		if (const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjectiveId))
+		{
+			FoundObj->RequiredQuantity = FMath::Max(1, ObjDef->RequiredQuantity);
+		}
+	}
+
+	const int32 OldProgress = FoundObj->CurrentQuantity;
+	const EShadowSlaveObjectiveState OldObjState = FoundObj->State;
+
+	FoundObj->CurrentQuantity = FoundObj->RequiredQuantity;
+	FoundObj->State = EShadowSlaveObjectiveState::Completed;
+
+	if (!bIsRestoringState)
+	{
+		if (OldProgress != FoundObj->CurrentQuantity)
+		{
+			OnObjectiveProgressChanged.Broadcast(QuestId, ObjectiveId, FoundObj->CurrentQuantity, OldProgress);
+		}
+		OnObjectiveStateChanged.Broadcast(QuestId, ObjectiveId, EShadowSlaveObjectiveState::Completed, OldObjState);
+		EvaluateQuestCompletion(QuestId);
+	}
+
+	return true;
 }
 
 bool UShadowSlaveQuestSubsystem::FailObjective(FName QuestId, FName ObjectiveId)
@@ -684,6 +842,13 @@ bool UShadowSlaveQuestSubsystem::FailObjective(FName QuestId, FName ObjectiveId)
 	if (FoundObj->State == EShadowSlaveObjectiveState::Failed)
 	{
 		return true; // Idempotent
+	}
+
+	if (FoundObj->State == EShadowSlaveObjectiveState::Completed)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::FailObjective - Cannot fail already completed objective '%s' in quest '%s'."),
+			*ObjectiveId.ToString(), *QuestId.ToString());
+		return false;
 	}
 
 	const EShadowSlaveObjectiveState OldObjState = FoundObj->State;
@@ -811,35 +976,65 @@ FShadowSlaveQuestSaveData UShadowSlaveQuestSubsystem::ExportSaveData() const
 
 bool UShadowSlaveQuestSubsystem::ImportSaveData(const FShadowSlaveQuestSaveData& InSaveData)
 {
+	// Required correction 5: Definition-first save restoration
+	// Required correction 6: Sanitize saved quest state
+	// Required correction 7: Sanitize saved objective state and progress
+
+	// 1. Validate save container / version
 	if (!InSaveData.bIsValid || InSaveData.QuestSubsystemVersion < 1)
 	{
-		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Incompatible or invalid save data"));
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Incompatible or invalid save data."));
 		return false;
 	}
 
 	// Suppress gameplay events during save restoration
 	TGuardValue<bool> RestoreGuard(bIsRestoringState, true);
 
+	// Pass 1: Resolve definitions and restore valid quest & objective structures
+	TMap<FName, EShadowSlaveQuestState> DesiredQuestStates;
+
 	for (const FShadowSlaveQuestRecordSaveData& SavedRecord : InSaveData.Quests)
 	{
-		if (SavedRecord.QuestId.IsNone() || SavedRecord.State == EShadowSlaveQuestState::Unknown)
+		// 2. Validate QuestId
+		if (SavedRecord.QuestId.IsNone())
 		{
 			continue;
 		}
 
-		FShadowSlaveQuestRuntimeState& RuntimeEntry = QuestRuntimeStates.FindOrAdd(SavedRecord.QuestId);
-		RuntimeEntry.QuestId = SavedRecord.QuestId;
-		RuntimeEntry.State = SavedRecord.State;
-		RuntimeEntry.RuntimeMetadata = SavedRecord.RuntimeMetadata;
-
-		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(SavedRecord.QuestId);
-		if (Def && SavedRecord.QuestVersion != Def->Version)
+		// Reject Unknown saved state
+		if (SavedRecord.State == EShadowSlaveQuestState::Unknown)
 		{
-			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Version mismatch for quest '%s' (Saved: %d, Def: %d)"),
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Saved quest '%s' has Unknown state; skipping."),
+				*SavedRecord.QuestId.ToString());
+			continue;
+		}
+
+		// 3. Resolve currently registered QuestDefinition
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(SavedRecord.QuestId);
+		if (!Def)
+		{
+			// 4. Missing definition: skip safely and log
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Missing QuestDefinition for saved quest '%s'; skipping."),
+				*SavedRecord.QuestId.ToString());
+			continue;
+		}
+
+		// 5. Validate saved quest version against definition
+		if (SavedRecord.QuestVersion != Def->Version)
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Version mismatch for quest '%s' (Saved: %d, Def: %d)."),
 				*SavedRecord.QuestId.ToString(), SavedRecord.QuestVersion, Def->Version);
 		}
 
-		// Restore objectives
+		// 6. Definition resolved: create / initialize runtime state
+		FShadowSlaveQuestRuntimeState& RuntimeEntry = QuestRuntimeStates.FindOrAdd(SavedRecord.QuestId);
+		RuntimeEntry.QuestId = SavedRecord.QuestId;
+		RuntimeEntry.RuntimeMetadata = SavedRecord.RuntimeMetadata;
+
+		// Initialize all objectives authoritatively from definition first
+		InitializeRuntimeObjectives(RuntimeEntry, Def);
+
+		// 7. Validate and restore saved objectives against resolved definition
 		for (const FShadowSlaveObjectiveSaveData& ObjSave : SavedRecord.Objectives)
 		{
 			if (ObjSave.ObjectiveId.IsNone())
@@ -847,20 +1042,93 @@ bool UShadowSlaveQuestSubsystem::ImportSaveData(const FShadowSlaveQuestSaveData&
 				continue;
 			}
 
-			if (Def && !Def->HasObjective(ObjSave.ObjectiveId))
+			// 8 & 9. Objective must exist in definition
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjSave.ObjectiveId);
+			if (!ObjDef)
 			{
-				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Objective '%s' in save data not found in definition '%s'; skipping."),
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Saved objective '%s' does not exist in definition '%s'; skipping."),
 					*ObjSave.ObjectiveId.ToString(), *SavedRecord.QuestId.ToString());
 				continue;
 			}
 
-			FShadowSlaveObjectiveRuntimeState& ObjRuntime = RuntimeEntry.ObjectiveStates.FindOrAdd(ObjSave.ObjectiveId);
-			ObjRuntime.ObjectiveId = ObjSave.ObjectiveId;
-			ObjRuntime.State = ObjSave.State;
-			ObjRuntime.CurrentQuantity = ObjSave.CurrentQuantity;
-			ObjRuntime.RequiredQuantity = ObjSave.RequiredQuantity;
-			ObjRuntime.bIsOptional = ObjSave.bIsOptional;
-			ObjRuntime.RuntimeMetadata = ObjSave.RuntimeMetadata;
+			if (ObjSave.State == EShadowSlaveObjectiveState::Unknown)
+			{
+				continue;
+			}
+
+			FShadowSlaveObjectiveRuntimeState* ObjRuntime = RuntimeEntry.ObjectiveStates.Find(ObjSave.ObjectiveId);
+			if (!ObjRuntime)
+			{
+				continue;
+			}
+
+			// Definition is authoritative for structural properties
+			ObjRuntime->RequiredQuantity = FMath::Max(1, ObjDef->RequiredQuantity);
+			ObjRuntime->bIsOptional = ObjDef->bIsOptional;
+			ObjRuntime->RuntimeMetadata = ObjSave.RuntimeMetadata;
+
+			// Progress and state sanitization
+			if (ObjSave.State == EShadowSlaveObjectiveState::Completed)
+			{
+				ObjRuntime->State = EShadowSlaveObjectiveState::Completed;
+				ObjRuntime->CurrentQuantity = ObjRuntime->RequiredQuantity;
+			}
+			else
+			{
+				ObjRuntime->State = ObjSave.State;
+				const int32 MaxUncompletedProgress = FMath::Max(0, ObjRuntime->RequiredQuantity - 1);
+				ObjRuntime->CurrentQuantity = FMath::Clamp(ObjSave.CurrentQuantity, 0, MaxUncompletedProgress);
+			}
+		}
+
+		DesiredQuestStates.Add(SavedRecord.QuestId, SavedRecord.State);
+	}
+
+	// Pass 2: Sanitize quest states based on prerequisites
+	for (const auto& Pair : DesiredQuestStates)
+	{
+		const FName QuestId = Pair.Key;
+		const EShadowSlaveQuestState DesiredState = Pair.Value;
+		FShadowSlaveQuestRuntimeState* RuntimeEntry = QuestRuntimeStates.Find(QuestId);
+		if (!RuntimeEntry)
+		{
+			continue;
+		}
+
+		if (DesiredState == EShadowSlaveQuestState::Completed ||
+		    DesiredState == EShadowSlaveQuestState::Failed ||
+		    DesiredState == EShadowSlaveQuestState::Abandoned ||
+		    DesiredState == EShadowSlaveQuestState::Locked)
+		{
+			RuntimeEntry->State = DesiredState;
+		}
+		else if (DesiredState == EShadowSlaveQuestState::Available || DesiredState == EShadowSlaveQuestState::Active)
+		{
+			// A quest with unsatisfied prerequisites must NOT be restored as Available or Active
+			if (ArePrerequisitesSatisfied(QuestId))
+			{
+				RuntimeEntry->State = DesiredState;
+			}
+			else
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::ImportSaveData - Quest '%s' was saved as state %d but prerequisites are not satisfied; falling back to Locked."),
+					*QuestId.ToString(), static_cast<uint8>(DesiredState));
+				RuntimeEntry->State = EShadowSlaveQuestState::Locked;
+
+				// Demote any active objectives to Inactive if quest fell back to Locked
+				for (auto& ObjPair : RuntimeEntry->ObjectiveStates)
+				{
+					if (ObjPair.Value.State == EShadowSlaveObjectiveState::Active)
+					{
+						ObjPair.Value.State = EShadowSlaveObjectiveState::Inactive;
+					}
+				}
+			}
+		}
+		else
+		{
+			// Malformed state: fall back to Locked
+			RuntimeEntry->State = EShadowSlaveQuestState::Locked;
 		}
 	}
 
