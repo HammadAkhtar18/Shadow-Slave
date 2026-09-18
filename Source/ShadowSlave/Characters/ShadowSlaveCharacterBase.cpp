@@ -4,6 +4,8 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionSystem.h"
@@ -85,6 +87,7 @@ float AShadowSlaveCharacterBase::TakeDamageCustom_Implementation(const FShadowSl
 
 	if (ActualDamage > 0.0f)
 	{
+		LastDamageAttacker = DamageInfo.Attacker.Get();
 		OnDamaged(DamageInfo);
 
 		if (CombatComponent)
@@ -123,7 +126,13 @@ float AShadowSlaveCharacterBase::TakeDamage(float DamageAmount, struct FDamageEv
 		return 0.0f;
 	}
 
-	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	const float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	if (ActualDamage > 0.0f)
+	{
+		LastDamageAttacker = DamageCauser;
+	}
+
+	return ActualDamage;
 }
 
 void AShadowSlaveCharacterBase::ApplyLocomotionSettings()
@@ -276,5 +285,15 @@ void AShadowSlaveCharacterBase::HandleDeath()
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->DisableMovement();
+	}
+
+	OnCharacterDied.Broadcast(this, LastDamageAttacker.Get());
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		{
+			QuestSub->NotifyTargetDefeated(CharacterId, this, LastDamageAttacker.Get());
+		}
 	}
 }

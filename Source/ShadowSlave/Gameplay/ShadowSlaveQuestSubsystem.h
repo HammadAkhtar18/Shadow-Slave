@@ -6,9 +6,19 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Gameplay/ShadowSlaveQuestTypes.h"
 #include "Gameplay/ShadowSlaveQuestDefinition.h"
+#include "World/ShadowSlaveWorldTypes.h"
+#include "Items/ShadowSlaveItemTypes.h"
+#include "Interaction/ShadowSlaveInteractionTypes.h"
 #include "ShadowSlaveQuestSubsystem.generated.h"
 
 class UShadowSlaveStorySubsystem;
+class APawn;
+class AActor;
+class UShadowSlaveInventoryComponent;
+class UShadowSlaveInteractionComponent;
+class UShadowSlaveWorldStateComponent;
+class UShadowSlaveItemDefinition;
+class UShadowSlaveNightmareScenarioDefinition;
 
 /**
  * Game Instance Subsystem acting as the authoritative runtime manager for quests and objectives.
@@ -211,6 +221,91 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Quest|Integration")
 	UShadowSlaveStorySubsystem* GetStorySubsystem() const;
 
+	/* --- Context & Source Registration --- */
+
+	/** Registers participating player pawn and binds to its gameplay components (inventory, interaction, world state) */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Context")
+	bool RegisterPlayerContext(APawn* PlayerPawn);
+
+	/** Unregisters player pawn and unbinds from its gameplay components */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Context")
+	void UnregisterPlayerContext();
+
+	/** Registers an inventory component source to observe item acquisition */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void RegisterInventorySource(UShadowSlaveInventoryComponent* InventoryComponent);
+
+	/** Unregisters an observed inventory component source */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void UnregisterInventorySource(UShadowSlaveInventoryComponent* InventoryComponent);
+
+	/** Registers an interaction component source to observe player interactions */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void RegisterInteractionSource(UShadowSlaveInteractionComponent* InteractionComponent);
+
+	/** Unregisters an observed interaction component source */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void UnregisterInteractionSource(UShadowSlaveInteractionComponent* InteractionComponent);
+
+	/** Registers a world state component source to observe state changes */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void RegisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent);
+
+	/** Unregisters an observed world state component source */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void UnregisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent);
+
+	/* --- Gameplay Event Notification API --- */
+
+	/**
+	 * Notifies the quest subsystem of a successful interaction with a world object.
+	 * Advances matching active Interact objectives.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyInteraction(AActor* Interactor, AActor* InteractableObject, FName InteractionId = NAME_None);
+
+	/**
+	 * Notifies the quest subsystem that a conversation completed cleanly.
+	 * Advances matching active TalkToCharacter objectives.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyConversationCompleted(FName DialogueId, AActor* SpeakerActor = nullptr);
+
+	/**
+	 * Notifies the quest subsystem that a target actor was defeated.
+	 * Advances matching active DefeatTarget objectives. Idempotent against duplicate death reports.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyTargetDefeated(FName TargetId, AActor* DefeatedActor = nullptr, AActor* KillerActor = nullptr);
+
+	/**
+	 * Notifies the quest subsystem that items were accepted into inventory.
+	 * Advances matching active CollectItem objectives using the confirmed quantity.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyItemCollected(FName ItemId, int32 Quantity = 1, UShadowSlaveItemDefinition* ItemDef = nullptr);
+
+	/**
+	 * Notifies the quest subsystem that an authoritative world state variable changed.
+	 * Evaluates and completes matching active WorldState objectives.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyWorldStateChanged(FName StateKey, const FShadowSlaveWorldValue& NewValue, AActor* OwningActor = nullptr);
+
+	/**
+	 * Notifies the quest subsystem that a location boundary or trigger was reached.
+	 * Completes matching active ReachLocation objectives.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifyLocationReached(FName LocationId, AActor* TriggerActor = nullptr);
+
+	/**
+	 * Notifies the quest subsystem that a survival condition or encounter was completed.
+	 * Completes matching active Survive objectives.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Events")
+	bool NotifySurvivalCompleted(FName SurvivalId, AActor* Actor = nullptr);
+
 	/* --- Events --- */
 
 	/** Broadcast when a quest's lifecycle state genuinely changes */
@@ -259,4 +354,47 @@ protected:
 
 	/** Evaluates if quest auto-completion rule is met */
 	void EvaluateQuestCompletion(FName QuestId);
+
+	/* --- Internal Event Listeners --- */
+
+	UFUNCTION()
+	void HandleInventoryItemAdded(const FShadowSlaveItemInstance& ItemInstance, int32 QuantityAdded);
+
+	UFUNCTION()
+	void HandleInteractionExecuted(AActor* Interactor, AActor* InteractableObject, const FShadowSlaveInteractionResult& Result);
+
+	UFUNCTION()
+	void HandleConversationCompleted(FName DialogueId);
+
+	UFUNCTION()
+	void HandleWorldStateChanged(FName Key, const FShadowSlaveWorldValue& NewValue, const FShadowSlaveWorldValue& OldValue, AActor* OwningActor);
+
+	UFUNCTION()
+	void HandleSelfQuestCompleted(FName CompletedQuestId);
+
+	UFUNCTION()
+	void HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef);
+
+	/** Weak reference to currently registered player pawn */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<APawn> CurrentPlayerPawn = nullptr;
+
+	/** Registered inventory components observed for item collection events */
+	TSet<TWeakObjectPtr<UShadowSlaveInventoryComponent>> RegisteredInventorySources;
+
+	/** Registered interaction components observed for player interaction events */
+	TSet<TWeakObjectPtr<UShadowSlaveInteractionComponent>> RegisteredInteractionSources;
+
+	/** Registered world state components observed for state changes */
+	TSet<TWeakObjectPtr<UShadowSlaveWorldStateComponent>> RegisteredWorldStateSources;
+
+	/** Actors already processed for death to guarantee idempotency */
+	UPROPERTY(Transient)
+	TSet<TWeakObjectPtr<AActor>> ProcessedDefeatedActors;
+
+	/** Frame counters for interaction anti-duplication */
+	TMap<TWeakObjectPtr<AActor>, uint64> LastInteractionFrames;
+
+	/** Frame counters for conversation anti-duplication */
+	TMap<FName, uint64> LastConversationFrames;
 };

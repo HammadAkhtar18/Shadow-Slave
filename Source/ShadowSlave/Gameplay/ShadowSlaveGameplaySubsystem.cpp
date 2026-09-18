@@ -81,6 +81,11 @@ void UShadowSlaveGameplaySubsystem::Deinitialize()
 		}
 	}
 
+	if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+	{
+		QuestSub->UnregisterPlayerContext();
+	}
+
 	CurrentPlayerPawn.Reset();
 	CurrentPlayerController.Reset();
 	CurrentInteractionTarget.Reset();
@@ -542,6 +547,18 @@ void UShadowSlaveGameplaySubsystem::SetPlayerContext(APlayerController* InContro
 			if (UShadowSlaveCombatComponent* NewCombat = InPawn->FindComponentByClass<UShadowSlaveCombatComponent>())
 			{
 				NewCombat->OnCombatStateChanged.AddUniqueDynamic(this, &UShadowSlaveGameplaySubsystem::HandlePlayerCombatStateChanged);
+			}
+
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->RegisterPlayerContext(InPawn);
+			}
+		}
+		else
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->UnregisterPlayerContext();
 			}
 		}
 

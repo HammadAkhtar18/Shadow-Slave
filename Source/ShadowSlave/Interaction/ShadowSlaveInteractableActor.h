@@ -53,6 +53,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Interaction")
 	void SetInteractionPrompt(const FText& NewPrompt);
 
+	/** Returns the unique interaction identifier */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Interaction")
+	FName GetInteractionId() const { return InteractionId; }
+
 	/* --- Components --- */
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Interaction", meta = (AllowPrivateAccess = "true"))

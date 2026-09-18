@@ -13,8 +13,11 @@ class UShadowSlaveCombatComponent;
 class UShadowSlaveAttributeComponent;
 class UShadowSlaveEquipmentComponent;
 
+class AShadowSlaveCharacterBase;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterHealthChangedSignature, float, CurrentHealth, float, MaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCharacterDamagedSignature, const FShadowSlaveDamageInfo&, DamageInfo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCharacterDeathSignature, AShadowSlaveCharacterBase*, DeadCharacter, AActor*, KillerActor);
 
 /**
  * Base character class for all characters in Shadow Slave (player, companions, enemies).
@@ -49,6 +52,22 @@ public:
 	/** Delegate triggered whenever character receives damage */
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Combat")
 	FOnCharacterDamagedSignature OnCharacterDamaged;
+
+	/** Delegate triggered whenever character dies */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Character|Events")
+	FOnCharacterDeathSignature OnCharacterDied;
+
+	/** Stable technical identifier for quest, dialogue, or encounter targeting */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Character")
+	FName CharacterId = NAME_None;
+
+	/** Returns stable technical identifier */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Character")
+	FName GetCharacterId() const { return CharacterId; }
+
+	/** Sets stable technical identifier */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Character")
+	void SetCharacterId(FName InId) { CharacterId = InId; }
 
 	/** Returns whether this character is currently alive */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Character")
@@ -149,6 +168,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Character")
 	bool bIsAlive = true;
+
+	/** Weak pointer to last known damage dealer for death attribution */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> LastDamageAttacker = nullptr;
 
 	/** Callback when attribute component broadcasts health changes */
 	UFUNCTION()

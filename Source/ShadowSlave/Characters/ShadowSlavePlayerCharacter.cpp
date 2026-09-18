@@ -9,6 +9,8 @@
 #include "Progression/ShadowSlaveProgressionComponent.h"
 #include "Aspects/ShadowSlaveAspectComponent.h"
 #include "Interaction/ShadowSlaveInteractionComponent.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -56,6 +58,32 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 
 	// Create modular interaction component
 	InteractionComponent = CreateDefaultSubobject<UShadowSlaveInteractionComponent>(TEXT("InteractionComponent"));
+}
+
+void AShadowSlavePlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		{
+			QuestSub->RegisterPlayerContext(this);
+		}
+	}
+}
+
+void AShadowSlavePlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		{
+			QuestSub->UnregisterPlayerContext();
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

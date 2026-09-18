@@ -2,8 +2,20 @@
 
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Dialogue/ShadowSlaveConversationSubsystem.h"
+#include "Nightmares/ShadowSlaveNightmareSubsystem.h"
+#include "Nightmares/ShadowSlaveNightmareScenarioDefinition.h"
+#include "Items/ShadowSlaveInventoryComponent.h"
+#include "Items/ShadowSlaveItemDefinition.h"
+#include "Interaction/ShadowSlaveInteractionComponent.h"
+#include "Interaction/ShadowSlaveInteractableActor.h"
+#include "Interaction/ShadowSlaveInteractableNPC.h"
+#include "World/ShadowSlaveWorldStateComponent.h"
+#include "Characters/ShadowSlaveCharacterBase.h"
+#include "Save/ShadowSlaveSaveableInterface.h"
 #include "Subsystems/SubsystemCollection.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/Pawn.h"
 #include "ShadowSlave.h"
 
 UShadowSlaveQuestSubsystem::UShadowSlaveQuestSubsystem()
@@ -15,16 +27,81 @@ UShadowSlaveQuestSubsystem::UShadowSlaveQuestSubsystem()
 void UShadowSlaveQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Collection.InitializeDependency<UShadowSlaveStorySubsystem>();
+	Collection.InitializeDependency<UShadowSlaveConversationSubsystem>();
+	Collection.InitializeDependency<UShadowSlaveNightmareSubsystem>();
 	Super::Initialize(Collection);
 
 	RegisteredDefinitions.Empty();
 	QuestRuntimeStates.Empty();
 	bIsRestoringState = false;
 	bIsProcessingTransition = false;
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveConversationSubsystem* ConvSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+		{
+			ConvSub->OnConversationCompleted.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleConversationCompleted);
+		}
+
+		if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+		{
+			NightmareSub->OnScenarioCompleted.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleNightmareScenarioCompleted);
+		}
+	}
+
+	OnQuestCompleted.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleSelfQuestCompleted);
 }
 
 void UShadowSlaveQuestSubsystem::Deinitialize()
 {
+	UnregisterPlayerContext();
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveConversationSubsystem* ConvSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+		{
+			ConvSub->OnConversationCompleted.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleConversationCompleted);
+		}
+
+		if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+		{
+			NightmareSub->OnScenarioCompleted.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleNightmareScenarioCompleted);
+		}
+	}
+
+	OnQuestCompleted.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleSelfQuestCompleted);
+
+	for (auto It = RegisteredInventorySources.CreateIterator(); It; ++It)
+	{
+		if (UShadowSlaveInventoryComponent* InvComp = It->Get())
+		{
+			InvComp->OnItemAdded.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleInventoryItemAdded);
+		}
+	}
+	RegisteredInventorySources.Empty();
+
+	for (auto It = RegisteredInteractionSources.CreateIterator(); It; ++It)
+	{
+		if (UShadowSlaveInteractionComponent* InterComp = It->Get())
+		{
+			InterComp->OnInteracted.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleInteractionExecuted);
+		}
+	}
+	RegisteredInteractionSources.Empty();
+
+	for (auto It = RegisteredWorldStateSources.CreateIterator(); It; ++It)
+	{
+		if (UShadowSlaveWorldStateComponent* WSComp = It->Get())
+		{
+			WSComp->OnWorldStateChanged.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleWorldStateChanged);
+		}
+	}
+	RegisteredWorldStateSources.Empty();
+
+	ProcessedDefeatedActors.Empty();
+	LastInteractionFrames.Empty();
+	LastConversationFrames.Empty();
+
 	RegisteredDefinitions.Empty();
 	QuestRuntimeStates.Empty();
 	Super::Deinitialize();
@@ -638,6 +715,10 @@ void UShadowSlaveQuestSubsystem::ResetAllQuests()
 			OnQuestStateChanged.Broadcast(Pair.Key, NewState, OldState);
 		}
 	}
+
+	ProcessedDefeatedActors.Empty();
+	LastInteractionFrames.Empty();
+	LastConversationFrames.Empty();
 }
 
 bool UShadowSlaveQuestSubsystem::SetObjectiveProgress(FName QuestId, FName ObjectiveId, int32 NewProgress)
@@ -1255,4 +1336,994 @@ UShadowSlaveStorySubsystem* UShadowSlaveQuestSubsystem::GetStorySubsystem() cons
 		return GI->GetSubsystem<UShadowSlaveStorySubsystem>();
 	}
 	return nullptr;
+}
+
+bool UShadowSlaveQuestSubsystem::RegisterPlayerContext(APawn* PlayerPawn)
+{
+	if (!PlayerPawn)
+	{
+		return false;
+	}
+
+	UnregisterPlayerContext();
+
+	CurrentPlayerPawn = PlayerPawn;
+
+	if (UShadowSlaveInventoryComponent* InvComp = PlayerPawn->FindComponentByClass<UShadowSlaveInventoryComponent>())
+	{
+		RegisterInventorySource(InvComp);
+	}
+
+	if (UShadowSlaveInteractionComponent* InterComp = PlayerPawn->FindComponentByClass<UShadowSlaveInteractionComponent>())
+	{
+		RegisterInteractionSource(InterComp);
+	}
+
+	if (UShadowSlaveWorldStateComponent* WSComp = PlayerPawn->FindComponentByClass<UShadowSlaveWorldStateComponent>())
+	{
+		RegisterWorldStateSource(WSComp);
+	}
+
+	return true;
+}
+
+void UShadowSlaveQuestSubsystem::UnregisterPlayerContext()
+{
+	if (CurrentPlayerPawn.IsValid())
+	{
+		if (APawn* Pawn = CurrentPlayerPawn.Get())
+		{
+			if (UShadowSlaveInventoryComponent* InvComp = Pawn->FindComponentByClass<UShadowSlaveInventoryComponent>())
+			{
+				UnregisterInventorySource(InvComp);
+			}
+
+			if (UShadowSlaveInteractionComponent* InterComp = Pawn->FindComponentByClass<UShadowSlaveInteractionComponent>())
+			{
+				UnregisterInteractionSource(InterComp);
+			}
+
+			if (UShadowSlaveWorldStateComponent* WSComp = Pawn->FindComponentByClass<UShadowSlaveWorldStateComponent>())
+			{
+				UnregisterWorldStateSource(WSComp);
+			}
+		}
+		CurrentPlayerPawn.Reset();
+	}
+}
+
+void UShadowSlaveQuestSubsystem::RegisterInventorySource(UShadowSlaveInventoryComponent* InventoryComponent)
+{
+	if (!InventoryComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveInventoryComponent> WeakComp(InventoryComponent);
+	if (!RegisteredInventorySources.Contains(WeakComp))
+	{
+		RegisteredInventorySources.Add(WeakComp);
+		InventoryComponent->OnItemAdded.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleInventoryItemAdded);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::UnregisterInventorySource(UShadowSlaveInventoryComponent* InventoryComponent)
+{
+	if (!InventoryComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveInventoryComponent> WeakComp(InventoryComponent);
+	if (RegisteredInventorySources.Contains(WeakComp))
+	{
+		InventoryComponent->OnItemAdded.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleInventoryItemAdded);
+		RegisteredInventorySources.Remove(WeakComp);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::RegisterInteractionSource(UShadowSlaveInteractionComponent* InteractionComponent)
+{
+	if (!InteractionComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveInteractionComponent> WeakComp(InteractionComponent);
+	if (!RegisteredInteractionSources.Contains(WeakComp))
+	{
+		RegisteredInteractionSources.Add(WeakComp);
+		InteractionComponent->OnInteracted.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleInteractionExecuted);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::UnregisterInteractionSource(UShadowSlaveInteractionComponent* InteractionComponent)
+{
+	if (!InteractionComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveInteractionComponent> WeakComp(InteractionComponent);
+	if (RegisteredInteractionSources.Contains(WeakComp))
+	{
+		InteractionComponent->OnInteracted.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleInteractionExecuted);
+		RegisteredInteractionSources.Remove(WeakComp);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::RegisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent)
+{
+	if (!WorldStateComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveWorldStateComponent> WeakComp(WorldStateComponent);
+	if (!RegisteredWorldStateSources.Contains(WeakComp))
+	{
+		RegisteredWorldStateSources.Add(WeakComp);
+		WorldStateComponent->OnWorldStateChanged.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleWorldStateChanged);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::UnregisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent)
+{
+	if (!WorldStateComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveWorldStateComponent> WeakComp(WorldStateComponent);
+	if (RegisteredWorldStateSources.Contains(WeakComp))
+	{
+		WorldStateComponent->OnWorldStateChanged.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleWorldStateChanged);
+		RegisteredWorldStateSources.Remove(WeakComp);
+	}
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyInteraction(AActor* Interactor, AActor* InteractableObject, FName InteractionId)
+{
+	if (!InteractableObject)
+	{
+		return false;
+	}
+
+	// Frame-level anti-duplication for the same interactable object
+	const uint64 CurrentFrame = GFrameCounter;
+	if (uint64* LastFrame = LastInteractionFrames.Find(InteractableObject))
+	{
+		if (*LastFrame == CurrentFrame)
+		{
+			return false;
+		}
+		*LastFrame = CurrentFrame;
+	}
+	else
+	{
+		LastInteractionFrames.Add(InteractableObject, CurrentFrame);
+	}
+
+	TArray<FName> CandidateIds;
+	if (!InteractionId.IsNone())
+	{
+		CandidateIds.Add(InteractionId);
+	}
+
+	if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(InteractableObject))
+	{
+		const FName ActorInterId = InteractableActor->GetInteractionId();
+		if (!ActorInterId.IsNone())
+		{
+			CandidateIds.AddUnique(ActorInterId);
+		}
+
+		const FName SaveId = InteractableActor->GetPersistentSaveId();
+		if (!SaveId.IsNone())
+		{
+			CandidateIds.AddUnique(SaveId);
+		}
+	}
+
+	if (const AShadowSlaveInteractableNPC* NPC = Cast<AShadowSlaveInteractableNPC>(InteractableObject))
+	{
+		const FName NPCId = NPC->GetNPCId();
+		if (!NPCId.IsNone())
+		{
+			CandidateIds.AddUnique(NPCId);
+		}
+	}
+
+	if (InteractableObject->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+	{
+		const FName SaveId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(InteractableObject);
+		if (!SaveId.IsNone())
+		{
+			CandidateIds.AddUnique(SaveId);
+		}
+	}
+
+	CandidateIds.AddUnique(InteractableObject->GetFName());
+
+	TArray<TPair<FName, FName>> ObjectivesToAdvance;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::Interact || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& CandId : CandidateIds)
+			{
+				if (ObjDef->TargetId == CandId)
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (!bMatches && InteractableObject->ActorHasTag(ObjDef->TargetId))
+			{
+				bMatches = true;
+			}
+
+			if (bMatches)
+			{
+				ObjectivesToAdvance.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyAdvanced = false;
+	for (const auto& Target : ObjectivesToAdvance)
+	{
+		if (AddObjectiveProgress(Target.Key, Target.Value, 1))
+		{
+			bAnyAdvanced = true;
+		}
+	}
+
+	return bAnyAdvanced;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyConversationCompleted(FName DialogueId, AActor* SpeakerActor)
+{
+	if (DialogueId.IsNone() && !SpeakerActor)
+	{
+		return false;
+	}
+
+	const uint64 CurrentFrame = GFrameCounter;
+	if (!DialogueId.IsNone())
+	{
+		if (uint64* LastFrame = LastConversationFrames.Find(DialogueId))
+		{
+			if (*LastFrame == CurrentFrame)
+			{
+				return false;
+			}
+			*LastFrame = CurrentFrame;
+		}
+		else
+		{
+			LastConversationFrames.Add(DialogueId, CurrentFrame);
+		}
+	}
+
+	TArray<FName> CandidateIds;
+	if (!DialogueId.IsNone())
+	{
+		CandidateIds.Add(DialogueId);
+	}
+
+	if (SpeakerActor)
+	{
+		if (const AShadowSlaveInteractableNPC* NPC = Cast<AShadowSlaveInteractableNPC>(SpeakerActor))
+		{
+			const FName NPCId = NPC->GetNPCId();
+			if (!NPCId.IsNone())
+			{
+				CandidateIds.AddUnique(NPCId);
+			}
+		}
+
+		if (const AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(SpeakerActor))
+		{
+			const FName CharId = Char->GetCharacterId();
+			if (!CharId.IsNone())
+			{
+				CandidateIds.AddUnique(CharId);
+			}
+		}
+
+		if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(SpeakerActor))
+		{
+			const FName ActorInterId = InteractableActor->GetInteractionId();
+			if (!ActorInterId.IsNone())
+			{
+				CandidateIds.AddUnique(ActorInterId);
+			}
+
+			const FName SaveId = InteractableActor->GetPersistentSaveId();
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
+
+		if (SpeakerActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+		{
+			const FName SaveId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(SpeakerActor);
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
+
+		CandidateIds.AddUnique(SpeakerActor->GetFName());
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToAdvance;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::TalkToCharacter || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& CandId : CandidateIds)
+			{
+				if (ObjDef->TargetId == CandId)
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (!bMatches && SpeakerActor && SpeakerActor->ActorHasTag(ObjDef->TargetId))
+			{
+				bMatches = true;
+			}
+
+			if (bMatches)
+			{
+				ObjectivesToAdvance.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyAdvanced = false;
+	for (const auto& Target : ObjectivesToAdvance)
+	{
+		if (AddObjectiveProgress(Target.Key, Target.Value, 1))
+		{
+			bAnyAdvanced = true;
+		}
+	}
+
+	return bAnyAdvanced;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyTargetDefeated(FName TargetId, AActor* DefeatedActor, AActor* KillerActor)
+{
+	if (TargetId.IsNone() && !DefeatedActor)
+	{
+		return false;
+	}
+
+	if (DefeatedActor)
+	{
+		if (ProcessedDefeatedActors.Contains(DefeatedActor))
+		{
+			return false;
+		}
+		ProcessedDefeatedActors.Add(DefeatedActor);
+	}
+
+	TArray<FName> CandidateIds;
+	if (!TargetId.IsNone())
+	{
+		CandidateIds.Add(TargetId);
+	}
+
+	if (DefeatedActor)
+	{
+		if (const AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(DefeatedActor))
+		{
+			const FName CharId = Char->GetCharacterId();
+			if (!CharId.IsNone())
+			{
+				CandidateIds.AddUnique(CharId);
+			}
+		}
+
+		if (const AShadowSlaveInteractableNPC* NPC = Cast<AShadowSlaveInteractableNPC>(DefeatedActor))
+		{
+			const FName NPCId = NPC->GetNPCId();
+			if (!NPCId.IsNone())
+			{
+				CandidateIds.AddUnique(NPCId);
+			}
+		}
+
+		if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(DefeatedActor))
+		{
+			const FName ActorInterId = InteractableActor->GetInteractionId();
+			if (!ActorInterId.IsNone())
+			{
+				CandidateIds.AddUnique(ActorInterId);
+			}
+
+			const FName SaveId = InteractableActor->GetPersistentSaveId();
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
+
+		if (DefeatedActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+		{
+			const FName SaveId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(DefeatedActor);
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
+
+		CandidateIds.AddUnique(DefeatedActor->GetFName());
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToAdvance;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::DefeatTarget || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& CandId : CandidateIds)
+			{
+				if (ObjDef->TargetId == CandId)
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (!bMatches && DefeatedActor && DefeatedActor->ActorHasTag(ObjDef->TargetId))
+			{
+				bMatches = true;
+			}
+
+			if (bMatches)
+			{
+				ObjectivesToAdvance.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyAdvanced = false;
+	for (const auto& Target : ObjectivesToAdvance)
+	{
+		if (AddObjectiveProgress(Target.Key, Target.Value, 1))
+		{
+			bAnyAdvanced = true;
+		}
+	}
+
+	return bAnyAdvanced;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyItemCollected(FName ItemId, int32 Quantity, UShadowSlaveItemDefinition* ItemDef)
+{
+	if (Quantity <= 0 || (ItemId.IsNone() && !ItemDef))
+	{
+		return false;
+	}
+
+	TArray<FName> CandidateIds;
+	if (!ItemId.IsNone())
+	{
+		CandidateIds.Add(ItemId);
+	}
+
+	if (ItemDef)
+	{
+		const FName AssetName = ItemDef->GetPrimaryAssetId().PrimaryAssetName;
+		if (!AssetName.IsNone())
+		{
+			CandidateIds.AddUnique(AssetName);
+		}
+		CandidateIds.AddUnique(ItemDef->GetFName());
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToAdvance;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::CollectItem || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& CandId : CandidateIds)
+			{
+				if (ObjDef->TargetId == CandId)
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (bMatches)
+			{
+				ObjectivesToAdvance.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyAdvanced = false;
+	for (const auto& Target : ObjectivesToAdvance)
+	{
+		if (AddObjectiveProgress(Target.Key, Target.Value, Quantity))
+		{
+			bAnyAdvanced = true;
+		}
+	}
+
+	return bAnyAdvanced;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyWorldStateChanged(FName StateKey, const FShadowSlaveWorldValue& NewValue, AActor* OwningActor)
+{
+	if (StateKey.IsNone())
+	{
+		return false;
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToComplete;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::WorldState || ObjDef->TargetId != StateKey)
+			{
+				continue;
+			}
+
+			if (const FString* ExpectedActorStr = ObjDef->Metadata.Find(TEXT("ActorId")))
+			{
+				if (!ExpectedActorStr->IsEmpty())
+				{
+					if (!OwningActor)
+					{
+						continue;
+					}
+
+					const FName ExpectedActorName(*(*ExpectedActorStr));
+					bool bActorMatches = (OwningActor->GetFName() == ExpectedActorName || OwningActor->ActorHasTag(ExpectedActorName));
+					if (!bActorMatches && OwningActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+					{
+						bActorMatches = (IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(OwningActor) == ExpectedActorName);
+					}
+
+					if (!bActorMatches)
+					{
+						continue;
+					}
+				}
+			}
+
+			bool bConditionSatisfied = false;
+			const FString* ExpectedValStr = ObjDef->Metadata.Find(TEXT("Value"));
+			if (!ExpectedValStr)
+			{
+				ExpectedValStr = ObjDef->Metadata.Find(TEXT("ExpectedValue"));
+			}
+
+			if (ExpectedValStr)
+			{
+				const FShadowSlaveWorldValue ExpectedVal = FShadowSlaveWorldValue::FromString(*ExpectedValStr);
+				const FString* OpStr = ObjDef->Metadata.Find(TEXT("Op"));
+				if (!OpStr)
+				{
+					OpStr = ObjDef->Metadata.Find(TEXT("Operator"));
+				}
+
+				if (OpStr && *OpStr == TEXT(">="))
+				{
+					if (NewValue.ValueType == EShadowSlaveWorldValueType::Int)
+					{
+						bConditionSatisfied = (NewValue.IntValue >= ExpectedVal.IntValue);
+					}
+					else if (NewValue.ValueType == EShadowSlaveWorldValueType::Float)
+					{
+						bConditionSatisfied = (NewValue.FloatValue >= ExpectedVal.FloatValue);
+					}
+					else
+					{
+						bConditionSatisfied = (NewValue == ExpectedVal);
+					}
+				}
+				else if (OpStr && *OpStr == TEXT("<="))
+				{
+					if (NewValue.ValueType == EShadowSlaveWorldValueType::Int)
+					{
+						bConditionSatisfied = (NewValue.IntValue <= ExpectedVal.IntValue);
+					}
+					else if (NewValue.ValueType == EShadowSlaveWorldValueType::Float)
+					{
+						bConditionSatisfied = (NewValue.FloatValue <= ExpectedVal.FloatValue);
+					}
+					else
+					{
+						bConditionSatisfied = (NewValue == ExpectedVal);
+					}
+				}
+				else if (OpStr && *OpStr == TEXT("!="))
+				{
+					bConditionSatisfied = (NewValue != ExpectedVal);
+				}
+				else
+				{
+					bConditionSatisfied = (NewValue == ExpectedVal);
+				}
+			}
+			else
+			{
+				if (NewValue.ValueType == EShadowSlaveWorldValueType::Bool)
+				{
+					bConditionSatisfied = NewValue.BoolValue;
+				}
+				else
+				{
+					bConditionSatisfied = NewValue.IsValid();
+				}
+			}
+
+			if (bConditionSatisfied)
+			{
+				ObjectivesToComplete.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyCompleted = false;
+	for (const auto& Target : ObjectivesToComplete)
+	{
+		if (CompleteObjective(Target.Key, Target.Value))
+		{
+			bAnyCompleted = true;
+		}
+	}
+
+	return bAnyCompleted;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifyLocationReached(FName LocationId, AActor* TriggerActor)
+{
+	if (LocationId.IsNone() && !TriggerActor)
+	{
+		return false;
+	}
+
+	TArray<FName> CandidateIds;
+	if (!LocationId.IsNone())
+	{
+		CandidateIds.Add(LocationId);
+	}
+
+	if (TriggerActor)
+	{
+		CandidateIds.AddUnique(TriggerActor->GetFName());
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToComplete;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::ReachLocation || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			bool bMatches = false;
+			for (const FName& CandId : CandidateIds)
+			{
+				if (ObjDef->TargetId == CandId)
+				{
+					bMatches = true;
+					break;
+				}
+			}
+
+			if (!bMatches && TriggerActor && TriggerActor->ActorHasTag(ObjDef->TargetId))
+			{
+				bMatches = true;
+			}
+
+			if (bMatches)
+			{
+				ObjectivesToComplete.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyCompleted = false;
+	for (const auto& Target : ObjectivesToComplete)
+	{
+		if (CompleteObjective(Target.Key, Target.Value))
+		{
+			bAnyCompleted = true;
+		}
+	}
+
+	return bAnyCompleted;
+}
+
+bool UShadowSlaveQuestSubsystem::NotifySurvivalCompleted(FName SurvivalId, AActor* Actor)
+{
+	if (SurvivalId.IsNone())
+	{
+		return false;
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToComplete;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (!ObjDef || ObjDef->ObjectiveType != EShadowSlaveObjectiveType::Survive || ObjDef->TargetId.IsNone())
+			{
+				continue;
+			}
+
+			if (ObjDef->TargetId == SurvivalId || (Actor && Actor->ActorHasTag(ObjDef->TargetId)) || (Actor && Actor->GetFName() == ObjDef->TargetId))
+			{
+				ObjectivesToComplete.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	bool bAnyCompleted = false;
+	for (const auto& Target : ObjectivesToComplete)
+	{
+		if (CompleteObjective(Target.Key, Target.Value))
+		{
+			bAnyCompleted = true;
+		}
+	}
+
+	return bAnyCompleted;
+}
+
+void UShadowSlaveQuestSubsystem::HandleInventoryItemAdded(const FShadowSlaveItemInstance& ItemInstance, int32 QuantityAdded)
+{
+	if (QuantityAdded <= 0 || !ItemInstance.IsValid() || !ItemInstance.ItemDefinition)
+	{
+		return;
+	}
+
+	FName ItemId = ItemInstance.ItemDefinition->GetPrimaryAssetId().PrimaryAssetName;
+	if (ItemId.IsNone())
+	{
+		ItemId = ItemInstance.ItemDefinition->GetFName();
+	}
+
+	NotifyItemCollected(ItemId, QuantityAdded, ItemInstance.ItemDefinition);
+}
+
+void UShadowSlaveQuestSubsystem::HandleInteractionExecuted(AActor* Interactor, AActor* InteractableObject, const FShadowSlaveInteractionResult& Result)
+{
+	if (Result.bSuccess)
+	{
+		NotifyInteraction(Interactor, InteractableObject, Result.InteractionId);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::HandleConversationCompleted(FName DialogueId)
+{
+	AActor* Speaker = nullptr;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UShadowSlaveConversationSubsystem* ConvSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+		{
+			Speaker = ConvSub->GetCurrentSpeaker();
+		}
+	}
+	NotifyConversationCompleted(DialogueId, Speaker);
+}
+
+void UShadowSlaveQuestSubsystem::HandleWorldStateChanged(FName Key, const FShadowSlaveWorldValue& NewValue, const FShadowSlaveWorldValue& OldValue, AActor* OwningActor)
+{
+	NotifyWorldStateChanged(Key, NewValue, OwningActor);
+}
+
+void UShadowSlaveQuestSubsystem::HandleSelfQuestCompleted(FName CompletedQuestId)
+{
+	if (CompletedQuestId.IsNone() || bIsRestoringState)
+	{
+		return;
+	}
+
+	TArray<TPair<FName, FName>> ObjectivesToComplete;
+
+	for (const auto& QuestPair : QuestRuntimeStates)
+	{
+		if (QuestPair.Value.State != EShadowSlaveQuestState::Active || QuestPair.Key == CompletedQuestId)
+		{
+			continue;
+		}
+
+		const UShadowSlaveQuestDefinition* Def = GetQuestDefinition(QuestPair.Key);
+		if (!Def)
+		{
+			continue;
+		}
+
+		for (const auto& ObjPair : QuestPair.Value.ObjectiveStates)
+		{
+			if (ObjPair.Value.State != EShadowSlaveObjectiveState::Active)
+			{
+				continue;
+			}
+
+			const FShadowSlaveObjectiveDefinition* ObjDef = Def->FindObjective(ObjPair.Key);
+			if (ObjDef && ObjDef->ObjectiveType == EShadowSlaveObjectiveType::CompleteQuest && ObjDef->TargetId == CompletedQuestId)
+			{
+				ObjectivesToComplete.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
+			}
+		}
+	}
+
+	for (const auto& Target : ObjectivesToComplete)
+	{
+		CompleteObjective(Target.Key, Target.Value);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
+{
+	if (ScenarioDef && !ScenarioDef->ScenarioId.IsNone())
+	{
+		NotifySurvivalCompleted(ScenarioDef->ScenarioId);
+	}
 }
