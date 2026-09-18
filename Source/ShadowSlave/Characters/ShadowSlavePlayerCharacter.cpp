@@ -10,6 +10,7 @@
 #include "Aspects/ShadowSlaveAspectComponent.h"
 #include "Interaction/ShadowSlaveInteractionComponent.h"
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Gameplay/ShadowSlaveGameplaySubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -64,26 +65,69 @@ void AShadowSlavePlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	NotifyGameplaySubsystemContext();
+}
+
+void AShadowSlavePlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearGameplaySubsystemContext();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AShadowSlavePlayerCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	NotifyGameplaySubsystemContext();
+}
+
+void AShadowSlavePlayerCharacter::UnPossessed()
+{
+	ClearGameplaySubsystemContext();
+
+	Super::UnPossessed();
+}
+
+void AShadowSlavePlayerCharacter::OnRep_Controller()
+{
+	Super::OnRep_Controller();
+
+	NotifyGameplaySubsystemContext();
+}
+
+void AShadowSlavePlayerCharacter::NotifyGameplaySubsystemContext()
+{
 	if (UGameInstance* GI = GetGameInstance())
 	{
-		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		APlayerController* PC = Cast<APlayerController>(GetController());
+		if (UShadowSlaveGameplaySubsystem* GameplaySub = GI->GetSubsystem<UShadowSlaveGameplaySubsystem>())
+		{
+			GameplaySub->SetPlayerContext(PC, this);
+		}
+		else if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
 		{
 			QuestSub->RegisterPlayerContext(this);
 		}
 	}
 }
 
-void AShadowSlavePlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void AShadowSlavePlayerCharacter::ClearGameplaySubsystemContext()
 {
 	if (UGameInstance* GI = GetGameInstance())
 	{
-		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		if (UShadowSlaveGameplaySubsystem* GameplaySub = GI->GetSubsystem<UShadowSlaveGameplaySubsystem>())
+		{
+			if (GameplaySub->GetPlayerPawn() == this)
+			{
+				GameplaySub->SetPlayerContext(nullptr, nullptr);
+			}
+		}
+		else if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
 		{
 			QuestSub->UnregisterPlayerContext();
 		}
 	}
-
-	Super::EndPlay(EndPlayReason);
 }
 
 void AShadowSlavePlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

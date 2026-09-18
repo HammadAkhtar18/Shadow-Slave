@@ -588,12 +588,28 @@ bool UShadowSlaveGameplaySubsystem::ResolvePlayerContext()
 	}
 
 	APawn* Pawn = PC->GetPawn();
-	SetPlayerContext(PC, Pawn);
-	return Pawn != nullptr;
+	if (Pawn)
+	{
+		SetPlayerContext(PC, Pawn);
+		return true;
+	}
+
+	// Controller is present but has not possessed a pawn yet; record controller without clearing existing pawn
+	if (!CurrentPlayerController.IsValid())
+	{
+		CurrentPlayerController = PC;
+	}
+	return false;
 }
 
 void UShadowSlaveGameplaySubsystem::SetPlayerContext(APlayerController* InController, APawn* InPawn)
 {
+	APlayerController* EffectiveController = InController;
+	if (!EffectiveController && InPawn)
+	{
+		EffectiveController = Cast<APlayerController>(InPawn->GetController());
+	}
+
 	const bool bPawnChanged = (CurrentPlayerPawn.Get() != InPawn);
 
 	if (bPawnChanged)
@@ -607,7 +623,11 @@ void UShadowSlaveGameplaySubsystem::SetPlayerContext(APlayerController* InContro
 		}
 
 		CurrentPlayerPawn = InPawn;
-		CurrentPlayerController = InController;
+
+		if (EffectiveController || !InPawn)
+		{
+			CurrentPlayerController = EffectiveController;
+		}
 
 		if (InPawn)
 		{
@@ -631,9 +651,9 @@ void UShadowSlaveGameplaySubsystem::SetPlayerContext(APlayerController* InContro
 
 		OnPlayerContextUpdated.Broadcast(InPawn);
 	}
-	else
+	else if (EffectiveController || !InPawn)
 	{
-		CurrentPlayerController = InController;
+		CurrentPlayerController = EffectiveController;
 	}
 }
 

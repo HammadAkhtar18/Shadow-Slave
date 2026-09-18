@@ -129,6 +129,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void UnPossessed() override;
+	virtual void OnRep_Controller() override;
 
 	virtual void InitializeAttributes() override;
 
@@ -186,4 +189,11 @@ public:
 
 	/** Returns InteractionComponent subobject **/
 	FORCEINLINE UShadowSlaveInteractionComponent* GetInteractionComponent() const { return InteractionComponent; }
+
+private:
+	/** Registers player character and controller with authoritative GameplaySubsystem */
+	void NotifyGameplaySubsystemContext();
+
+	/** Cleans up player context from GameplaySubsystem on unpossess or destruction */
+	void ClearGameplaySubsystemContext();
 };

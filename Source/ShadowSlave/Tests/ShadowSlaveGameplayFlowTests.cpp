@@ -345,6 +345,14 @@ bool FShadowSlaveGameplayBootstrapPermitsExplorationWithoutPlayerContextTest::Ru
 	GameplaySub->SetPlayerContext(nullptr, nullptr);
 	TestNull(TEXT("PlayerPawn remains null after SetPlayerContext(nullptr, nullptr)"),
 		GameplaySub->GetPlayerPawn());
+	TestNull(TEXT("PlayerController remains null after SetPlayerContext(nullptr, nullptr)"),
+		GameplaySub->GetPlayerController());
+
+	// Calling ResolvePlayerContext without a World returns false safely without corrupting state
+	TestFalse(TEXT("ResolvePlayerContext returns false when world is absent"),
+		GameplaySub->ResolvePlayerContext());
+	TestEqual(TEXT("Flow state remains Exploration after context operations"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
 
 	return true;
 }
