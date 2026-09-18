@@ -7,6 +7,7 @@
 #include "Nightmares/ShadowSlaveNightmareScenarioDefinition.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Characters/ShadowSlaveCharacterBase.h"
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "World/ShadowSlaveWorldStateComponent.h"
 #include "Engine/World.h"
@@ -84,6 +85,10 @@ void UShadowSlaveGameplaySubsystem::Deinitialize()
 	if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
 	{
 		QuestSub->UnregisterPlayerContext();
+		if (AShadowSlaveCharacterBase* EnemyChar = Cast<AShadowSlaveCharacterBase>(CurrentCombatInstigator.Get()))
+		{
+			QuestSub->UnregisterCharacterSource(EnemyChar);
+		}
 	}
 
 	CurrentPlayerPawn.Reset();
@@ -267,6 +272,18 @@ bool UShadowSlaveGameplaySubsystem::BeginDialogue(UShadowSlaveDialogueDefinition
 
 	CurrentConversationSpeaker = SpeakerActor;
 	CurrentInteractionTarget = SpeakerActor;
+
+	if (SpeakerActor)
+	{
+		if (AShadowSlaveCharacterBase* CharSpeaker = Cast<AShadowSlaveCharacterBase>(SpeakerActor))
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->RegisterCharacterSource(CharSpeaker);
+			}
+		}
+	}
+
 	return true;
 }
 
@@ -312,11 +329,31 @@ bool UShadowSlaveGameplaySubsystem::BeginCombatFlow(AActor* InstigatingEnemy)
 	}
 
 	CurrentCombatInstigator = InstigatingEnemy;
+	if (InstigatingEnemy)
+	{
+		if (AShadowSlaveCharacterBase* EnemyChar = Cast<AShadowSlaveCharacterBase>(InstigatingEnemy))
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->RegisterCharacterSource(EnemyChar);
+			}
+		}
+	}
 	return true;
 }
 
 bool UShadowSlaveGameplaySubsystem::EndCombatFlow()
 {
+	if (CurrentCombatInstigator.IsValid())
+	{
+		if (AShadowSlaveCharacterBase* EnemyChar = Cast<AShadowSlaveCharacterBase>(CurrentCombatInstigator.Get()))
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->UnregisterCharacterSource(EnemyChar);
+			}
+		}
+	}
 	CurrentCombatInstigator = nullptr;
 
 	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Combat)
@@ -588,6 +625,16 @@ AActor* UShadowSlaveGameplaySubsystem::GetInteractionTarget() const
 void UShadowSlaveGameplaySubsystem::SetInteractionTarget(AActor* Target)
 {
 	CurrentInteractionTarget = Target;
+	if (Target)
+	{
+		if (AShadowSlaveCharacterBase* CharTarget = Cast<AShadowSlaveCharacterBase>(Target))
+		{
+			if (UShadowSlaveQuestSubsystem* QuestSub = GetQuestSubsystem())
+			{
+				QuestSub->RegisterCharacterSource(CharTarget);
+			}
+		}
+	}
 }
 
 AActor* UShadowSlaveGameplaySubsystem::GetConversationSpeaker() const

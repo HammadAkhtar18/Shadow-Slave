@@ -18,6 +18,162 @@
 #include "GameFramework/Pawn.h"
 #include "ShadowSlave.h"
 
+namespace
+{
+	/** Helper to parse expected world value string according to type rules and fail closed on invalid format */
+	static bool TryParseExpectedWorldValue(
+		const FString& InValueStr,
+		const FString* InExplicitTypeStr,
+		EShadowSlaveWorldValueType FallbackType,
+		FShadowSlaveWorldValue& OutParsedValue)
+	{
+		if (InValueStr.IsEmpty() || InValueStr.Equals(TEXT("none"), ESearchCase::IgnoreCase))
+		{
+			return false;
+		}
+
+		EShadowSlaveWorldValueType ExpectedType = EShadowSlaveWorldValueType::None;
+		FString Payload = InValueStr;
+
+		// 1. Check for standard serialization prefix: "b:", "i:", "f:", "s:", "n:"
+		if (InValueStr.Len() >= 2 && InValueStr[1] == TEXT(':'))
+		{
+			const TCHAR Prefix = InValueStr[0];
+			switch (Prefix)
+			{
+			case TEXT('b'): ExpectedType = EShadowSlaveWorldValueType::Bool; break;
+			case TEXT('i'): ExpectedType = EShadowSlaveWorldValueType::Int; break;
+			case TEXT('f'): ExpectedType = EShadowSlaveWorldValueType::Float; break;
+			case TEXT('s'): ExpectedType = EShadowSlaveWorldValueType::String; break;
+			case TEXT('n'): ExpectedType = EShadowSlaveWorldValueType::Name; break;
+			default: break;
+			}
+
+			if (ExpectedType != EShadowSlaveWorldValueType::None)
+			{
+				Payload = InValueStr.RightChop(2);
+			}
+		}
+
+		// 2. If no prefix, check explicit type string from metadata
+		if (ExpectedType == EShadowSlaveWorldValueType::None && InExplicitTypeStr && !InExplicitTypeStr->IsEmpty())
+		{
+			if (InExplicitTypeStr->Equals(TEXT("Bool"), ESearchCase::IgnoreCase) || InExplicitTypeStr->Equals(TEXT("Boolean"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Bool;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Int"), ESearchCase::IgnoreCase) || InExplicitTypeStr->Equals(TEXT("Integer"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Int;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Float"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Float;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("String"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::String;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Name"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Name;
+			}
+			else
+			{
+				return false; // Unknown explicit type -> unparseable
+			}
+		}
+
+		// 3. If still undetermined, infer type from literal format or fallback to matching runtime type
+		if (ExpectedType == EShadowSlaveWorldValueType::None)
+		{
+			if (InValueStr.Equals(TEXT("true"), ESearchCase::IgnoreCase) || InValueStr.Equals(TEXT("false"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Bool;
+			}
+			else if (InValueStr.IsNumeric())
+			{
+				ExpectedType = InValueStr.Contains(TEXT(".")) ? EShadowSlaveWorldValueType::Float : EShadowSlaveWorldValueType::Int;
+			}
+			else if (FallbackType == EShadowSlaveWorldValueType::Name)
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Name;
+			}
+			else
+			{
+				ExpectedType = EShadowSlaveWorldValueType::String;
+			}
+		}
+
+		// 4. Parse payload into specified type with strict validation
+		switch (ExpectedType)
+		{
+		case EShadowSlaveWorldValueType::Bool:
+		{
+			if (Payload.Equals(TEXT("true"), ESearchCase::IgnoreCase) || Payload == TEXT("1"))
+			{
+				OutParsedValue = FShadowSlaveWorldValue::MakeBool(true);
+				return true;
+			}
+			if (Payload.Equals(TEXT("false"), ESearchCase::IgnoreCase) || Payload == TEXT("0"))
+			{
+				OutParsedValue = FShadowSlaveWorldValue::MakeBool(false);
+				return true;
+			}
+			return false; // Unparseable bool
+		}
+		case EShadowSlaveWorldValueType::Int:
+		{
+			const FString Trimmed = Payload.TrimStartAndEnd();
+			if (Trimmed.IsEmpty())
+			{
+				return false;
+			}
+			const int32 StartIdx = (Trimmed[0] == TEXT('-') || Trimmed[0] == TEXT('+')) ? 1 : 0;
+			if (StartIdx >= Trimmed.Len())
+			{
+				return false;
+			}
+			for (int32 i = StartIdx; i < Trimmed.Len(); ++i)
+			{
+				if (!FChar::IsDigit(Trimmed[i]))
+				{
+					return false;
+				}
+			}
+			OutParsedValue = FShadowSlaveWorldValue::MakeInt(FCString::Atoi(*Trimmed));
+			return true;
+		}
+		case EShadowSlaveWorldValueType::Float:
+		{
+			const FString Trimmed = Payload.TrimStartAndEnd();
+			if (Trimmed.IsEmpty() || !Trimmed.IsNumeric())
+			{
+				return false;
+			}
+			OutParsedValue = FShadowSlaveWorldValue::MakeFloat(FCString::Atof(*Trimmed));
+			return true;
+		}
+		case EShadowSlaveWorldValueType::String:
+		{
+			OutParsedValue = FShadowSlaveWorldValue::MakeString(Payload);
+			return true;
+		}
+		case EShadowSlaveWorldValueType::Name:
+		{
+			if (Payload.IsEmpty() || Payload.Equals(TEXT("none"), ESearchCase::IgnoreCase))
+			{
+				return false;
+			}
+			OutParsedValue = FShadowSlaveWorldValue::MakeName(FName(*Payload));
+			return true;
+		}
+		default:
+			return false;
+		}
+	}
+}
+
 UShadowSlaveQuestSubsystem::UShadowSlaveQuestSubsystem()
 	: bIsRestoringState(false)
 	, bIsProcessingTransition(false)
@@ -97,6 +253,15 @@ void UShadowSlaveQuestSubsystem::Deinitialize()
 		}
 	}
 	RegisteredWorldStateSources.Empty();
+
+	for (auto It = RegisteredCharacterSources.CreateIterator(); It; ++It)
+	{
+		if (AShadowSlaveCharacterBase* Char = It->Get())
+		{
+			Char->OnCharacterDied.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleCharacterDied);
+		}
+	}
+	RegisteredCharacterSources.Empty();
 
 	ProcessedDefeatedActors.Empty();
 	LastInteractionFrames.Empty();
@@ -1349,6 +1514,11 @@ bool UShadowSlaveQuestSubsystem::RegisterPlayerContext(APawn* PlayerPawn)
 
 	CurrentPlayerPawn = PlayerPawn;
 
+	if (AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(PlayerPawn))
+	{
+		RegisterCharacterSource(Char);
+	}
+
 	if (UShadowSlaveInventoryComponent* InvComp = PlayerPawn->FindComponentByClass<UShadowSlaveInventoryComponent>())
 	{
 		RegisterInventorySource(InvComp);
@@ -1373,6 +1543,11 @@ void UShadowSlaveQuestSubsystem::UnregisterPlayerContext()
 	{
 		if (APawn* Pawn = CurrentPlayerPawn.Get())
 		{
+			if (AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(Pawn))
+			{
+				UnregisterCharacterSource(Char);
+			}
+
 			if (UShadowSlaveInventoryComponent* InvComp = Pawn->FindComponentByClass<UShadowSlaveInventoryComponent>())
 			{
 				UnregisterInventorySource(InvComp);
@@ -1482,6 +1657,48 @@ void UShadowSlaveQuestSubsystem::UnregisterWorldStateSource(UShadowSlaveWorldSta
 	}
 }
 
+void UShadowSlaveQuestSubsystem::RegisterCharacterSource(AShadowSlaveCharacterBase* Character)
+{
+	if (!Character)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<AShadowSlaveCharacterBase> WeakChar(Character);
+	if (!RegisteredCharacterSources.Contains(WeakChar))
+	{
+		RegisteredCharacterSources.Add(WeakChar);
+		Character->OnCharacterDied.AddUniqueDynamic(this, &UShadowSlaveQuestSubsystem::HandleCharacterDied);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::UnregisterCharacterSource(AShadowSlaveCharacterBase* Character)
+{
+	if (!Character)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<AShadowSlaveCharacterBase> WeakChar(Character);
+	if (RegisteredCharacterSources.Contains(WeakChar))
+	{
+		Character->OnCharacterDied.RemoveDynamic(this, &UShadowSlaveQuestSubsystem::HandleCharacterDied);
+		RegisteredCharacterSources.Remove(WeakChar);
+	}
+}
+
+void UShadowSlaveQuestSubsystem::HandleCharacterDied(AShadowSlaveCharacterBase* DeadCharacter, AActor* KillerActor)
+{
+	if (!DeadCharacter)
+	{
+		return;
+	}
+
+	const FName CharId = DeadCharacter->GetCharacterId();
+	NotifyTargetDefeated(CharId, DeadCharacter, KillerActor);
+	UnregisterCharacterSource(DeadCharacter);
+}
+
 bool UShadowSlaveQuestSubsystem::NotifyInteraction(AActor* Interactor, AActor* InteractableObject, FName InteractionId)
 {
 	if (!InteractableObject)
@@ -1542,8 +1759,6 @@ bool UShadowSlaveQuestSubsystem::NotifyInteraction(AActor* Interactor, AActor* I
 			CandidateIds.AddUnique(SaveId);
 		}
 	}
-
-	CandidateIds.AddUnique(InteractableObject->GetFName());
 
 	TArray<TPair<FName, FName>> ObjectivesToAdvance;
 
@@ -1680,8 +1895,6 @@ bool UShadowSlaveQuestSubsystem::NotifyConversationCompleted(FName DialogueId, A
 				CandidateIds.AddUnique(SaveId);
 			}
 		}
-
-		CandidateIds.AddUnique(SpeakerActor->GetFName());
 	}
 
 	TArray<TPair<FName, FName>> ObjectivesToAdvance;
@@ -1811,8 +2024,6 @@ bool UShadowSlaveQuestSubsystem::NotifyTargetDefeated(FName TargetId, AActor* De
 				CandidateIds.AddUnique(SaveId);
 			}
 		}
-
-		CandidateIds.AddUnique(DefeatedActor->GetFName());
 	}
 
 	TArray<TPair<FName, FName>> ObjectivesToAdvance;
@@ -1897,7 +2108,6 @@ bool UShadowSlaveQuestSubsystem::NotifyItemCollected(FName ItemId, int32 Quantit
 		{
 			CandidateIds.AddUnique(AssetName);
 		}
-		CandidateIds.AddUnique(ItemDef->GetFName());
 	}
 
 	TArray<TPair<FName, FName>> ObjectivesToAdvance;
@@ -2002,10 +2212,47 @@ bool UShadowSlaveQuestSubsystem::NotifyWorldStateChanged(FName StateKey, const F
 					}
 
 					const FName ExpectedActorName(*(*ExpectedActorStr));
-					bool bActorMatches = (OwningActor->GetFName() == ExpectedActorName || OwningActor->ActorHasTag(ExpectedActorName));
+					bool bActorMatches = false;
+
+					if (const AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(OwningActor))
+					{
+						if (Char->GetCharacterId() == ExpectedActorName)
+						{
+							bActorMatches = true;
+						}
+					}
+
+					if (!bActorMatches)
+					{
+						if (const AShadowSlaveInteractableNPC* NPC = Cast<AShadowSlaveInteractableNPC>(OwningActor))
+						{
+							if (NPC->GetNPCId() == ExpectedActorName)
+							{
+								bActorMatches = true;
+							}
+						}
+					}
+
+					if (!bActorMatches)
+					{
+						if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(OwningActor))
+						{
+							if (InteractableActor->GetInteractionId() == ExpectedActorName ||
+								InteractableActor->GetPersistentSaveId() == ExpectedActorName)
+							{
+								bActorMatches = true;
+							}
+						}
+					}
+
 					if (!bActorMatches && OwningActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
 					{
 						bActorMatches = (IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(OwningActor) == ExpectedActorName);
+					}
+
+					if (!bActorMatches && OwningActor->ActorHasTag(ExpectedActorName))
+					{
+						bActorMatches = true;
 					}
 
 					if (!bActorMatches)
@@ -2024,61 +2271,144 @@ bool UShadowSlaveQuestSubsystem::NotifyWorldStateChanged(FName StateKey, const F
 
 			if (ExpectedValStr)
 			{
-				const FShadowSlaveWorldValue ExpectedVal = FShadowSlaveWorldValue::FromString(*ExpectedValStr);
+				const FString* ExplicitTypeStr = ObjDef->Metadata.Find(TEXT("ValueType"));
+				if (!ExplicitTypeStr)
+				{
+					ExplicitTypeStr = ObjDef->Metadata.Find(TEXT("Type"));
+				}
+
+				FShadowSlaveWorldValue ExpectedVal;
+				if (!TryParseExpectedWorldValue(*ExpectedValStr, ExplicitTypeStr, NewValue.ValueType, ExpectedVal))
+				{
+					// Invalid/unparseable expected value -> fail closed
+					continue;
+				}
+
+				// Strict type compatibility: any mismatch fails closed
+				if (NewValue.ValueType != ExpectedVal.ValueType || NewValue.ValueType == EShadowSlaveWorldValueType::None)
+				{
+					continue;
+				}
+
 				const FString* OpStr = ObjDef->Metadata.Find(TEXT("Op"));
 				if (!OpStr)
 				{
 					OpStr = ObjDef->Metadata.Find(TEXT("Operator"));
 				}
 
-				if (OpStr && *OpStr == TEXT(">="))
+				if (OpStr && (*OpStr == TEXT(">=") || *OpStr == TEXT(">")))
 				{
+					// >= and > are only valid for Int with Int OR Float with Float
 					if (NewValue.ValueType == EShadowSlaveWorldValueType::Int)
 					{
-						bConditionSatisfied = (NewValue.IntValue >= ExpectedVal.IntValue);
+						bConditionSatisfied = (*OpStr == TEXT(">=")) ? (NewValue.IntValue >= ExpectedVal.IntValue) : (NewValue.IntValue > ExpectedVal.IntValue);
 					}
 					else if (NewValue.ValueType == EShadowSlaveWorldValueType::Float)
 					{
-						bConditionSatisfied = (NewValue.FloatValue >= ExpectedVal.FloatValue);
+						bConditionSatisfied = (*OpStr == TEXT(">=")) ? (NewValue.FloatValue >= ExpectedVal.FloatValue) : (NewValue.FloatValue > ExpectedVal.FloatValue);
 					}
 					else
 					{
-						bConditionSatisfied = (NewValue == ExpectedVal);
+						// Incompatible operator for non-numeric type -> fail closed
+						continue;
 					}
 				}
-				else if (OpStr && *OpStr == TEXT("<="))
+				else if (OpStr && (*OpStr == TEXT("<=") || *OpStr == TEXT("<")))
 				{
+					// <= and < are only valid for Int with Int OR Float with Float
 					if (NewValue.ValueType == EShadowSlaveWorldValueType::Int)
 					{
-						bConditionSatisfied = (NewValue.IntValue <= ExpectedVal.IntValue);
+						bConditionSatisfied = (*OpStr == TEXT("<=")) ? (NewValue.IntValue <= ExpectedVal.IntValue) : (NewValue.IntValue < ExpectedVal.IntValue);
 					}
 					else if (NewValue.ValueType == EShadowSlaveWorldValueType::Float)
 					{
-						bConditionSatisfied = (NewValue.FloatValue <= ExpectedVal.FloatValue);
+						bConditionSatisfied = (*OpStr == TEXT("<=")) ? (NewValue.FloatValue <= ExpectedVal.FloatValue) : (NewValue.FloatValue < ExpectedVal.FloatValue);
 					}
 					else
 					{
-						bConditionSatisfied = (NewValue == ExpectedVal);
+						// Incompatible operator for non-numeric type -> fail closed
+						continue;
 					}
 				}
 				else if (OpStr && *OpStr == TEXT("!="))
 				{
-					bConditionSatisfied = (NewValue != ExpectedVal);
+					// != only between strictly compatible types
+					switch (NewValue.ValueType)
+					{
+					case EShadowSlaveWorldValueType::Bool:
+						bConditionSatisfied = (NewValue.BoolValue != ExpectedVal.BoolValue);
+						break;
+					case EShadowSlaveWorldValueType::Int:
+						bConditionSatisfied = (NewValue.IntValue != ExpectedVal.IntValue);
+						break;
+					case EShadowSlaveWorldValueType::Float:
+						bConditionSatisfied = !FMath::IsNearlyEqual(NewValue.FloatValue, ExpectedVal.FloatValue);
+						break;
+					case EShadowSlaveWorldValueType::String:
+						bConditionSatisfied = !NewValue.StringValue.Equals(ExpectedVal.StringValue, ESearchCase::CaseSensitive);
+						break;
+					case EShadowSlaveWorldValueType::Name:
+						bConditionSatisfied = (NewValue.NameValue != ExpectedVal.NameValue);
+						break;
+					default:
+						bConditionSatisfied = false;
+						break;
+					}
+				}
+				else if (!OpStr || OpStr->IsEmpty() || *OpStr == TEXT("=="))
+				{
+					// == only between strictly compatible types
+					switch (NewValue.ValueType)
+					{
+					case EShadowSlaveWorldValueType::Bool:
+						bConditionSatisfied = (NewValue.BoolValue == ExpectedVal.BoolValue);
+						break;
+					case EShadowSlaveWorldValueType::Int:
+						bConditionSatisfied = (NewValue.IntValue == ExpectedVal.IntValue);
+						break;
+					case EShadowSlaveWorldValueType::Float:
+						bConditionSatisfied = FMath::IsNearlyEqual(NewValue.FloatValue, ExpectedVal.FloatValue);
+						break;
+					case EShadowSlaveWorldValueType::String:
+						bConditionSatisfied = NewValue.StringValue.Equals(ExpectedVal.StringValue, ESearchCase::CaseSensitive);
+						break;
+					case EShadowSlaveWorldValueType::Name:
+						bConditionSatisfied = (NewValue.NameValue == ExpectedVal.NameValue);
+						break;
+					default:
+						bConditionSatisfied = false;
+						break;
+					}
 				}
 				else
 				{
-					bConditionSatisfied = (NewValue == ExpectedVal);
+					// Unknown operator -> fail closed
+					continue;
 				}
 			}
 			else
 			{
-				if (NewValue.ValueType == EShadowSlaveWorldValueType::Bool)
+				// No expected value supplied: preserve intentional default semantics without reinterpreting unrelated payload fields
+				switch (NewValue.ValueType)
 				{
+				case EShadowSlaveWorldValueType::Bool:
 					bConditionSatisfied = NewValue.BoolValue;
-				}
-				else
-				{
-					bConditionSatisfied = NewValue.IsValid();
+					break;
+				case EShadowSlaveWorldValueType::Int:
+					bConditionSatisfied = (NewValue.IntValue != 0);
+					break;
+				case EShadowSlaveWorldValueType::Float:
+					bConditionSatisfied = !FMath::IsNearlyZero(NewValue.FloatValue);
+					break;
+				case EShadowSlaveWorldValueType::String:
+					bConditionSatisfied = !NewValue.StringValue.IsEmpty();
+					break;
+				case EShadowSlaveWorldValueType::Name:
+					bConditionSatisfied = (!NewValue.NameValue.IsNone() && NewValue.NameValue != NAME_None);
+					break;
+				default:
+					bConditionSatisfied = false;
+					break;
 				}
 			}
 
@@ -2116,7 +2446,22 @@ bool UShadowSlaveQuestSubsystem::NotifyLocationReached(FName LocationId, AActor*
 
 	if (TriggerActor)
 	{
-		CandidateIds.AddUnique(TriggerActor->GetFName());
+		if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(TriggerActor))
+		{
+			const FName SaveId = InteractableActor->GetPersistentSaveId();
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
+		else if (TriggerActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+		{
+			const FName SaveId = IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(TriggerActor);
+			if (!SaveId.IsNone())
+			{
+				CandidateIds.AddUnique(SaveId);
+			}
+		}
 	}
 
 	TArray<TPair<FName, FName>> ObjectivesToComplete;
@@ -2216,7 +2561,7 @@ bool UShadowSlaveQuestSubsystem::NotifySurvivalCompleted(FName SurvivalId, AActo
 				continue;
 			}
 
-			if (ObjDef->TargetId == SurvivalId || (Actor && Actor->ActorHasTag(ObjDef->TargetId)) || (Actor && Actor->GetFName() == ObjDef->TargetId))
+			if (ObjDef->TargetId == SurvivalId || (Actor && Actor->ActorHasTag(ObjDef->TargetId)))
 			{
 				ObjectivesToComplete.Add(TPair<FName, FName>(QuestPair.Key, ObjPair.Key));
 			}
@@ -2242,12 +2587,7 @@ void UShadowSlaveQuestSubsystem::HandleInventoryItemAdded(const FShadowSlaveItem
 		return;
 	}
 
-	FName ItemId = ItemInstance.ItemDefinition->GetPrimaryAssetId().PrimaryAssetName;
-	if (ItemId.IsNone())
-	{
-		ItemId = ItemInstance.ItemDefinition->GetFName();
-	}
-
+	const FName ItemId = ItemInstance.ItemDefinition->GetPrimaryAssetId().PrimaryAssetName;
 	NotifyItemCollected(ItemId, QuantityAdded, ItemInstance.ItemDefinition);
 }
 

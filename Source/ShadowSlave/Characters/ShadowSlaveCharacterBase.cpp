@@ -4,8 +4,6 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
-#include "Gameplay/ShadowSlaveQuestSubsystem.h"
-#include "Engine/GameInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionSystem.h"
@@ -288,12 +286,4 @@ void AShadowSlaveCharacterBase::HandleDeath()
 	}
 
 	OnCharacterDied.Broadcast(this, LastDamageAttacker.Get());
-
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
-		{
-			QuestSub->NotifyTargetDefeated(CharacterId, this, LastDamageAttacker.Get());
-		}
-	}
 }

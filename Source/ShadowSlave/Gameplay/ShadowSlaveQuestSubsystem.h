@@ -19,6 +19,7 @@ class UShadowSlaveInteractionComponent;
 class UShadowSlaveWorldStateComponent;
 class UShadowSlaveItemDefinition;
 class UShadowSlaveNightmareScenarioDefinition;
+class AShadowSlaveCharacterBase;
 
 /**
  * Game Instance Subsystem acting as the authoritative runtime manager for quests and objectives.
@@ -255,6 +256,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
 	void UnregisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent);
 
+	/** Registers a participating character to observe death events */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void RegisterCharacterSource(AShadowSlaveCharacterBase* Character);
+
+	/** Unregisters an observed participating character */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Integration")
+	void UnregisterCharacterSource(AShadowSlaveCharacterBase* Character);
+
 	/* --- Gameplay Event Notification API --- */
 
 	/**
@@ -375,6 +384,9 @@ protected:
 	UFUNCTION()
 	void HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef);
 
+	UFUNCTION()
+	void HandleCharacterDied(AShadowSlaveCharacterBase* DeadCharacter, AActor* KillerActor);
+
 	/** Weak reference to currently registered player pawn */
 	UPROPERTY(Transient)
 	TWeakObjectPtr<APawn> CurrentPlayerPawn = nullptr;
@@ -387,6 +399,9 @@ protected:
 
 	/** Registered world state components observed for state changes */
 	TSet<TWeakObjectPtr<UShadowSlaveWorldStateComponent>> RegisteredWorldStateSources;
+
+	/** Registered character sources observed for death events */
+	TSet<TWeakObjectPtr<AShadowSlaveCharacterBase>> RegisteredCharacterSources;
 
 	/** Actors already processed for death to guarantee idempotency */
 	UPROPERTY(Transient)
