@@ -16,6 +16,130 @@
 
 namespace
 {
+	/** Helper to strictly parse an integer string without allowing partial conversions or trailing characters */
+	static bool TryParseStrictInt(const FString& InStr, int32& OutValue)
+	{
+		const FString Trimmed = InStr.TrimStartAndEnd();
+		if (Trimmed.IsEmpty())
+		{
+			return false;
+		}
+
+		const TCHAR* Buffer = *Trimmed;
+		int32 Index = 0;
+		if (Buffer[Index] == TEXT('+') || Buffer[Index] == TEXT('-'))
+		{
+			Index++;
+		}
+
+		// Must have at least one digit
+		if (Buffer[Index] == TEXT('\0'))
+		{
+			return false;
+		}
+
+		while (Buffer[Index] != TEXT('\0'))
+		{
+			if (!FChar::IsDigit(Buffer[Index]))
+			{
+				return false;
+			}
+			Index++;
+		}
+
+		// Verify that it fits within int32 limits
+		const int64 Val64 = FCString::Atoi64(Buffer);
+		if (Val64 < static_cast<int64>(TNumericLimits<int32>::Lowest()) || Val64 > static_cast<int64>(TNumericLimits<int32>::Max()))
+		{
+			return false;
+		}
+
+		OutValue = static_cast<int32>(Val64);
+		return true;
+	}
+
+	/** Helper to strictly parse a floating-point string without allowing partial conversions or trailing characters */
+	static bool TryParseStrictFloat(const FString& InStr, float& OutValue)
+	{
+		const FString Trimmed = InStr.TrimStartAndEnd();
+		if (Trimmed.IsEmpty())
+		{
+			return false;
+		}
+
+		const TCHAR* Buffer = *Trimmed;
+		int32 Index = 0;
+		if (Buffer[Index] == TEXT('+') || Buffer[Index] == TEXT('-'))
+		{
+			Index++;
+		}
+
+		if (Buffer[Index] == TEXT('\0'))
+		{
+			return false;
+		}
+
+		bool bHasDigitsBeforeDot = false;
+		while (Buffer[Index] != TEXT('\0') && FChar::IsDigit(Buffer[Index]))
+		{
+			bHasDigitsBeforeDot = true;
+			Index++;
+		}
+
+		bool bHasDot = false;
+		bool bHasDigitsAfterDot = false;
+		if (Buffer[Index] == TEXT('.'))
+		{
+			Index++;
+			while (Buffer[Index] != TEXT('\0') && FChar::IsDigit(Buffer[Index]))
+			{
+				bHasDigitsAfterDot = true;
+				Index++;
+			}
+		}
+
+		// Must have at least one digit before or after the decimal point
+		if (!bHasDigitsBeforeDot && !bHasDigitsAfterDot)
+		{
+			return false;
+		}
+
+		// Optional scientific notation exponent (e.g. 1e-4, 2.5E3)
+		if (Buffer[Index] == TEXT('e') || Buffer[Index] == TEXT('E'))
+		{
+			Index++;
+			if (Buffer[Index] == TEXT('+') || Buffer[Index] == TEXT('-'))
+			{
+				Index++;
+			}
+			bool bHasExponentDigits = false;
+			while (Buffer[Index] != TEXT('\0') && FChar::IsDigit(Buffer[Index]))
+			{
+				bHasExponentDigits = true;
+				Index++;
+			}
+			if (!bHasExponentDigits)
+			{
+				return false;
+			}
+		}
+
+		// Optional float suffix 'f' or 'F'
+		if (Buffer[Index] == TEXT('f') || Buffer[Index] == TEXT('F'))
+		{
+			Index++;
+		}
+
+		// Must have reached the end of the string
+		if (Buffer[Index] != TEXT('\0'))
+		{
+			return false;
+		}
+
+		OutValue = FCString::Atof(Buffer);
+		return true;
+	}
+
 	/** Helper to parse expected world value string according to type rules and fail closed on invalid format */
 	static bool TryParseWorldValue(
 		const FString& InValueStr,
@@ -89,14 +213,40 @@ namespace
 		switch (ExpectedType)
 		{
 		case EShadowSlaveWorldValueType::Bool:
-			OutParsedValue = FShadowSlaveWorldValue::MakeBool(Payload.Equals(TEXT("true"), ESearchCase::IgnoreCase) || Payload.Equals(TEXT("1")));
-			return true;
+		{
+			const FString TrimmedBool = Payload.TrimStartAndEnd();
+			if (TrimmedBool.Equals(TEXT("true"), ESearchCase::IgnoreCase) || TrimmedBool.Equals(TEXT("1")))
+			{
+				OutParsedValue = FShadowSlaveWorldValue::MakeBool(true);
+				return true;
+			}
+			else if (TrimmedBool.Equals(TEXT("false"), ESearchCase::IgnoreCase) || TrimmedBool.Equals(TEXT("0")))
+			{
+				OutParsedValue = FShadowSlaveWorldValue::MakeBool(false);
+				return true;
+			}
+			return false;
+		}
 		case EShadowSlaveWorldValueType::Int:
-			OutParsedValue = FShadowSlaveWorldValue::MakeInt(FCString::Atoi(*Payload));
+		{
+			int32 ParsedInt = 0;
+			if (!TryParseStrictInt(Payload, ParsedInt))
+			{
+				return false;
+			}
+			OutParsedValue = FShadowSlaveWorldValue::MakeInt(ParsedInt);
 			return true;
+		}
 		case EShadowSlaveWorldValueType::Float:
-			OutParsedValue = FShadowSlaveWorldValue::MakeFloat(FCString::Atof(*Payload));
+		{
+			float ParsedFloat = 0.0f;
+			if (!TryParseStrictFloat(Payload, ParsedFloat))
+			{
+				return false;
+			}
+			OutParsedValue = FShadowSlaveWorldValue::MakeFloat(ParsedFloat);
 			return true;
+		}
 		case EShadowSlaveWorldValueType::String:
 			OutParsedValue = FShadowSlaveWorldValue::MakeString(Payload);
 			return true;
@@ -2158,6 +2308,17 @@ bool UShadowSlaveStorySubsystem::ImportSaveData(const FShadowSlaveStorySaveData&
 	}
 
 	// 2. Restore story content (chapters/arcs)
+	// Pass 1: Resolve definitions, initialize authoritative entry structure from current definition,
+	// and restore valid saved entry states while ignoring unknown states and nonexistent entries.
+	struct FPendingStoryContentRestore
+	{
+		FName StoryContentId;
+		EShadowSlaveStoryContentState DesiredState;
+		FName DesiredActiveEntryId;
+	};
+
+	TArray<FPendingStoryContentRestore> PendingStoryContents;
+
 	for (const FShadowSlaveStoryContentRecordSaveData& SavedContentRecord : InSaveData.StoryContents)
 	{
 		if (SavedContentRecord.StoryContentId.IsNone() || SavedContentRecord.State == EShadowSlaveStoryContentState::Unknown)
@@ -2184,13 +2345,12 @@ bool UShadowSlaveStorySubsystem::ImportSaveData(const FShadowSlaveStorySaveData&
 		// Create or find runtime entry
 		FShadowSlaveStoryContentRuntimeState& RuntimeEntry = StoryContentRuntimeStates.FindOrAdd(SavedContentRecord.StoryContentId);
 		RuntimeEntry.StoryContentId = SavedContentRecord.StoryContentId;
-		RuntimeEntry.State = SavedContentRecord.State;
 		RuntimeEntry.RuntimeMetadata = SavedContentRecord.RuntimeMetadata;
 
-		// Initialize all entries from definition first
+		// Initialize all entries from definition first (authored entry set and ordering, all Locked)
 		InitializeRuntimeContentEntries(RuntimeEntry, Def);
 
-		// Restore saved child entries that exist in definition
+		// Restore saved child entries that exist in definition with valid states
 		for (const auto& EntryPair : SavedContentRecord.EntryStates)
 		{
 			const FName EntryId = EntryPair.Key;
@@ -2210,25 +2370,272 @@ bool UShadowSlaveStorySubsystem::ImportSaveData(const FShadowSlaveStorySaveData&
 
 			if (FShadowSlaveStoryContentEntryRuntimeState* EntryRuntime = RuntimeEntry.EntryStates.Find(EntryId))
 			{
-				EntryRuntime->State = SavedEntryState;
+				// Only restore structurally valid states
+				if (SavedEntryState == EShadowSlaveStoryContentState::Locked ||
+				    SavedEntryState == EShadowSlaveStoryContentState::Available ||
+				    SavedEntryState == EShadowSlaveStoryContentState::Active ||
+				    SavedEntryState == EShadowSlaveStoryContentState::Completed ||
+				    SavedEntryState == EShadowSlaveStoryContentState::Failed ||
+				    SavedEntryState == EShadowSlaveStoryContentState::Skipped)
+				{
+					EntryRuntime->State = SavedEntryState;
+				}
 			}
 		}
 
-		// Restore CurrentActiveEntryId if valid in definition
-		if (!SavedContentRecord.CurrentActiveEntryId.IsNone())
+		FPendingStoryContentRestore Pending;
+		Pending.StoryContentId = SavedContentRecord.StoryContentId;
+		Pending.DesiredState = SavedContentRecord.State;
+		Pending.DesiredActiveEntryId = SavedContentRecord.CurrentActiveEntryId;
+		PendingStoryContents.Add(Pending);
+	}
+
+	// Pass 2: Reconcile parent content states against restored entries and prerequisites.
+	// Phase 2A: Resolve terminal states and Active-to-terminal normalizations first so subsequent prerequisite checks observe them.
+	TSet<FName> FinalizedContentIds;
+
+	for (const FPendingStoryContentRestore& Pending : PendingStoryContents)
+	{
+		const FName StoryContentId = Pending.StoryContentId;
+		const EShadowSlaveStoryContentState DesiredState = Pending.DesiredState;
+		FShadowSlaveStoryContentRuntimeState* RuntimeEntry = StoryContentRuntimeStates.Find(StoryContentId);
+		const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+		if (!RuntimeEntry || !Def)
 		{
-			if (Def->HasContentEntry(SavedContentRecord.CurrentActiveEntryId))
+			continue;
+		}
+
+		// Saved terminal parents (Completed, Failed, Skipped)
+		if (DesiredState == EShadowSlaveStoryContentState::Completed ||
+		    DesiredState == EShadowSlaveStoryContentState::Failed ||
+		    DesiredState == EShadowSlaveStoryContentState::Skipped)
+		{
+			RuntimeEntry->State = DesiredState;
+			RuntimeEntry->CurrentActiveEntryId = NAME_None;
+			// Terminal parents cannot have Active child entries
+			for (auto& EntryPair : RuntimeEntry->EntryStates)
 			{
-				RuntimeEntry.CurrentActiveEntryId = SavedContentRecord.CurrentActiveEntryId;
+				if (EntryPair.Value.State == EShadowSlaveStoryContentState::Active)
+				{
+					EntryPair.Value.State = EShadowSlaveStoryContentState::Locked;
+				}
+			}
+			FinalizedContentIds.Add(StoryContentId);
+		}
+		else if (DesiredState == EShadowSlaveStoryContentState::Active)
+		{
+			// Active parent Case 1: If any required/non-optional entry is Failed, restore the parent as Failed
+			bool bHasFailedRequiredEntry = false;
+			for (const FShadowSlaveStoryContentEntry& EntryDef : Def->ContentEntries)
+			{
+				if (!EntryDef.bIsOptional)
+				{
+					const EShadowSlaveStoryContentState EntryState = GetStoryContentEntryState(StoryContentId, EntryDef.ContentId);
+					if (EntryState == EShadowSlaveStoryContentState::Failed)
+					{
+						bHasFailedRequiredEntry = true;
+						break;
+					}
+				}
+			}
+
+			if (bHasFailedRequiredEntry)
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ImportSaveData - Story content '%s' was saved as Active but has failed mandatory entries; normalizing to Failed."),
+					*StoryContentId.ToString());
+				RuntimeEntry->State = EShadowSlaveStoryContentState::Failed;
+				RuntimeEntry->CurrentActiveEntryId = NAME_None;
+				for (auto& EntryPair : RuntimeEntry->EntryStates)
+				{
+					if (EntryPair.Value.State == EShadowSlaveStoryContentState::Active)
+					{
+						EntryPair.Value.State = EShadowSlaveStoryContentState::Locked;
+					}
+				}
+				FinalizedContentIds.Add(StoryContentId);
+			}
+			// Active parent Case 2: If all required/non-optional entries are Completed, restore the parent as Completed
+			else if (AreAllRequiredContentEntriesCompleted(StoryContentId))
+			{
+				UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveStorySubsystem::ImportSaveData - Story content '%s' was saved as Active with all required entries completed; normalizing to Completed."),
+					*StoryContentId.ToString());
+				RuntimeEntry->State = EShadowSlaveStoryContentState::Completed;
+				RuntimeEntry->CurrentActiveEntryId = NAME_None;
+				for (auto& EntryPair : RuntimeEntry->EntryStates)
+				{
+					if (EntryPair.Value.State == EShadowSlaveStoryContentState::Active)
+					{
+						EntryPair.Value.State = EShadowSlaveStoryContentState::Locked;
+					}
+				}
+				FinalizedContentIds.Add(StoryContentId);
+			}
+		}
+	}
+
+	// Phase 2B: Resolve remaining non-terminal story contents (Active, Available, Locked) with prerequisite evaluation and active entry reconciliation
+	for (const FPendingStoryContentRestore& Pending : PendingStoryContents)
+	{
+		const FName StoryContentId = Pending.StoryContentId;
+		if (FinalizedContentIds.Contains(StoryContentId))
+		{
+			continue;
+		}
+
+		const EShadowSlaveStoryContentState DesiredState = Pending.DesiredState;
+		FShadowSlaveStoryContentRuntimeState* RuntimeEntry = StoryContentRuntimeStates.Find(StoryContentId);
+		const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+		if (!RuntimeEntry || !Def)
+		{
+			continue;
+		}
+
+		if (DesiredState == EShadowSlaveStoryContentState::Active)
+		{
+			// Active parent: must satisfy parent prerequisites
+			if (!AreStoryContentPrerequisitesSatisfied(StoryContentId))
+			{
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ImportSaveData - Story content '%s' was saved as Active but prerequisites are not satisfied; falling back to Locked."),
+					*StoryContentId.ToString());
+				RuntimeEntry->State = EShadowSlaveStoryContentState::Locked;
+				RuntimeEntry->CurrentActiveEntryId = NAME_None;
+				for (auto& EntryPair : RuntimeEntry->EntryStates)
+				{
+					if (EntryPair.Value.State == EShadowSlaveStoryContentState::Active ||
+					    EntryPair.Value.State == EShadowSlaveStoryContentState::Available)
+					{
+						EntryPair.Value.State = EShadowSlaveStoryContentState::Locked;
+					}
+				}
+				continue;
+			}
+
+			// Parent remains Active
+			RuntimeEntry->State = EShadowSlaveStoryContentState::Active;
+
+			// Reconcile single CurrentActiveEntryId deterministically
+			FName SelectedActiveEntryId = NAME_None;
+
+			// 1. Check if DesiredActiveEntryId from save is a valid candidate
+			if (!Pending.DesiredActiveEntryId.IsNone() && Def->HasContentEntry(Pending.DesiredActiveEntryId))
+			{
+				const EShadowSlaveStoryContentState DesiredEntryState = GetStoryContentEntryState(StoryContentId, Pending.DesiredActiveEntryId);
+				if (DesiredEntryState == EShadowSlaveStoryContentState::Active &&
+				    AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, Pending.DesiredActiveEntryId))
+				{
+					SelectedActiveEntryId = Pending.DesiredActiveEntryId;
+				}
+			}
+
+			// 2. If not selected, check if any entry in authored order was saved as Active with prerequisites satisfied
+			if (SelectedActiveEntryId.IsNone())
+			{
+				for (const FShadowSlaveStoryContentEntry& EntryDef : Def->ContentEntries)
+				{
+					const EShadowSlaveStoryContentState EntryState = GetStoryContentEntryState(StoryContentId, EntryDef.ContentId);
+					if (EntryState == EShadowSlaveStoryContentState::Active &&
+					    AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryDef.ContentId))
+					{
+						SelectedActiveEntryId = EntryDef.ContentId;
+						break;
+					}
+				}
+			}
+
+			// 3. If still not selected (e.g. all saved entries were Locked or DesiredActiveEntryId was invalid),
+			// deterministically select the first valid entry whose prerequisites are satisfied via FindNextProgressionEntryId
+			if (SelectedActiveEntryId.IsNone())
+			{
+				SelectedActiveEntryId = FindNextProgressionEntryId(StoryContentId);
+			}
+
+			// Apply selected active entry and sanitize other entries
+			RuntimeEntry->CurrentActiveEntryId = SelectedActiveEntryId;
+
+			for (const FShadowSlaveStoryContentEntry& EntryDef : Def->ContentEntries)
+			{
+				FShadowSlaveStoryContentEntryRuntimeState* EntryRuntime = RuntimeEntry->EntryStates.Find(EntryDef.ContentId);
+				if (!EntryRuntime)
+				{
+					continue;
+				}
+
+				if (!SelectedActiveEntryId.IsNone() && EntryDef.ContentId == SelectedActiveEntryId)
+				{
+					EntryRuntime->State = EShadowSlaveStoryContentState::Active;
+				}
+				else
+				{
+					// No other entry can be Active
+					if (EntryRuntime->State == EShadowSlaveStoryContentState::Active)
+					{
+						EntryRuntime->State = AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryDef.ContentId)
+							? EShadowSlaveStoryContentState::Available
+							: EShadowSlaveStoryContentState::Locked;
+					}
+					else if (EntryRuntime->State == EShadowSlaveStoryContentState::Available)
+					{
+						if (!AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryDef.ContentId))
+						{
+							EntryRuntime->State = EShadowSlaveStoryContentState::Locked;
+						}
+					}
+					// Terminal states (Completed, Failed, Skipped) and Locked remain preserved
+				}
+			}
+		}
+		else if (DesiredState == EShadowSlaveStoryContentState::Available)
+		{
+			if (AreStoryContentPrerequisitesSatisfied(StoryContentId))
+			{
+				RuntimeEntry->State = EShadowSlaveStoryContentState::Available;
 			}
 			else
 			{
-				RuntimeEntry.CurrentActiveEntryId = NAME_None;
+				UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ImportSaveData - Story content '%s' was saved as Available but prerequisites are not satisfied; falling back to Locked."),
+					*StoryContentId.ToString());
+				RuntimeEntry->State = EShadowSlaveStoryContentState::Locked;
+			}
+
+			RuntimeEntry->CurrentActiveEntryId = NAME_None;
+
+			for (const FShadowSlaveStoryContentEntry& EntryDef : Def->ContentEntries)
+			{
+				FShadowSlaveStoryContentEntryRuntimeState* EntryRuntime = RuntimeEntry->EntryStates.Find(EntryDef.ContentId);
+				if (!EntryRuntime)
+				{
+					continue;
+				}
+
+				// Child entries cannot be Active under Available or Locked parent
+				if (EntryRuntime->State == EShadowSlaveStoryContentState::Active)
+				{
+					EntryRuntime->State = (RuntimeEntry->State == EShadowSlaveStoryContentState::Available && AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryDef.ContentId))
+						? EShadowSlaveStoryContentState::Available
+						: EShadowSlaveStoryContentState::Locked;
+				}
+				else if (EntryRuntime->State == EShadowSlaveStoryContentState::Available)
+				{
+					if (RuntimeEntry->State != EShadowSlaveStoryContentState::Available || !AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryDef.ContentId))
+					{
+						EntryRuntime->State = EShadowSlaveStoryContentState::Locked;
+					}
+				}
 			}
 		}
-		else
+		else // Locked or any other state
 		{
-			RuntimeEntry.CurrentActiveEntryId = NAME_None;
+			RuntimeEntry->State = EShadowSlaveStoryContentState::Locked;
+			RuntimeEntry->CurrentActiveEntryId = NAME_None;
+
+			for (auto& EntryPair : RuntimeEntry->EntryStates)
+			{
+				if (EntryPair.Value.State == EShadowSlaveStoryContentState::Active ||
+				    EntryPair.Value.State == EShadowSlaveStoryContentState::Available)
+				{
+					EntryPair.Value.State = EShadowSlaveStoryContentState::Locked;
+				}
+			}
 		}
 	}
 
