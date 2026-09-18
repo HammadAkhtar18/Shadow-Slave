@@ -73,4 +73,6 @@ struct SHADOWSLAVE_API FShadowSlaveAspectAbilityInstance
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAspectChangedSignature, UShadowSlaveAspectDefinition*, NewAspectDef, UShadowSlaveAspectDefinition*, OldAspectDef);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAbilityUnlockedSignature, FName, AbilityId, UShadowSlaveAspectAbilityDefinition*, AbilityDef);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAbilityActivatedSignature, FName, AbilityId, UShadowSlaveAspectAbilityDefinition*, AbilityDef);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAbilityDeactivatedSignature, FName, AbilityId, UShadowSlaveAspectAbilityDefinition*, AbilityDef);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFlawChangedSignature, UShadowSlaveFlawDefinition*, NewFlawDef, UShadowSlaveFlawDefinition*, OldFlawDef);

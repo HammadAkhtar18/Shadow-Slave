@@ -82,6 +82,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Aspects|Abilities")
 	bool IsAbilityUnlocked(FName AbilityId) const;
 
+	/** Returns whether an ability with the given identifier is currently active. Active state is transient and is not saved. */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Aspects|Abilities")
+	bool IsAbilityActive(FName AbilityId) const;
+
 	/**
 	 * Unlocks an ability by its unique AbilityId.
 	 * Broadcasts OnAbilityUnlocked if the ability was newly unlocked.
@@ -98,22 +102,23 @@ public:
 
 	/**
 	 * Checks whether the specified ability can currently be activated.
-	 * Verifies existence and unlocked state.
-	 * NOTE: Actual activation execution is deferred to future gameplay layers.
+	 * Verifies existence, unlock state, configured rank requirement, and available Essence when a
+	 * data-driven cost is configured. Does not consume resources or mutate ability state.
 	 */
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Aspects|Execution")
 	bool CanActivateAbility(FName AbilityId) const;
 
 	/**
-	 * Extensibility boundary for activating an Aspect ability.
-	 * Returns false as safe prototype stub until concrete ability executions are added.
+	 * Activates the generic runtime state for an unlocked Aspect ability.
+	 * Existing data-driven Essence cost is consumed only after all validation passes. This does not
+	 * implement a canon effect, combat action, range, montage, or cooldown; those remain future
+	 * consumers of the activation event.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Aspects|Execution")
 	bool ActivateAbility(FName AbilityId);
 
 	/**
-	 * Extensibility boundary for deactivating a sustained/toggle Aspect ability.
-	 * Returns false as safe prototype stub until concrete ability executions are added.
+	 * Deactivates a currently active generic Aspect ability runtime state.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Aspects|Execution")
 	bool DeactivateAbility(FName AbilityId);
@@ -142,6 +147,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Aspects|Events")
 	FOnAbilityUnlockedSignature OnAbilityUnlocked;
 
+	/** Broadcast after an ability enters its transient active state and any configured Essence cost is committed. */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Aspects|Events")
+	FOnAbilityActivatedSignature OnAbilityActivated;
+
+	/** Broadcast after an active ability leaves its transient active state. */
+	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Aspects|Events")
+	FOnAbilityDeactivatedSignature OnAbilityDeactivated;
+
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Aspects|Events")
 	FOnFlawChangedSignature OnFlawChanged;
 
@@ -157,4 +170,7 @@ protected:
 	/** Active Flaw definition bound to this character */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Aspects|State")
 	TObjectPtr<UShadowSlaveFlawDefinition> ActiveFlawDefinition = nullptr;
+
+	/** Guards activation/deactivation against re-entrant delegate callbacks. */
+	bool bIsProcessingAbilityTransition = false;
 };

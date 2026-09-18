@@ -10,6 +10,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveQuestTests.cpp         # Quest registration, duplicate rejection, prerequisites, objective progress invariants
 ├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
+├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
 └── README.md                         # Documentation and discovery guide
 ```

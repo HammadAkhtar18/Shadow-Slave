@@ -2,6 +2,8 @@
 
 #include "Aspects/ShadowSlaveAspectComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
+#include "Progression/ShadowSlaveProgressionComponent.h"
+#include "Core/ShadowSlaveLogChannels.h"
 #include "GameFramework/Actor.h"
 
 UShadowSlaveAspectComponent::UShadowSlaveAspectComponent()
@@ -10,6 +12,7 @@ UShadowSlaveAspectComponent::UShadowSlaveAspectComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 	AspectDefinition = nullptr;
 	ActiveFlawDefinition = nullptr;
+	bIsProcessingAbilityTransition = false;
 }
 
 bool UShadowSlaveAspectComponent::SetAspectDefinition(UShadowSlaveAspectDefinition* NewAspectDef)
@@ -19,7 +22,22 @@ bool UShadowSlaveAspectComponent::SetAspectDefinition(UShadowSlaveAspectDefiniti
 		return true;
 	}
 
+	if (bIsProcessingAbilityTransition)
+	{
+		return false;
+	}
+
+	TGuardValue<bool> TransitionGuard(bIsProcessingAbilityTransition, true);
 	UShadowSlaveAspectDefinition* OldAspectDef = AspectDefinition;
+	for (FShadowSlaveAspectAbilityInstance& Instance : AbilityInstances)
+	{
+		if (Instance.bIsActive)
+		{
+			Instance.bIsActive = false;
+			OnAbilityDeactivated.Broadcast(Instance.GetAbilityId(), Instance.AbilityDefinition);
+		}
+	}
+
 	AspectDefinition = NewAspectDef;
 
 	// Populate runtime ability instances matching the definition
@@ -104,6 +122,24 @@ bool UShadowSlaveAspectComponent::IsAbilityUnlocked(FName AbilityId) const
 	return false;
 }
 
+bool UShadowSlaveAspectComponent::IsAbilityActive(FName AbilityId) const
+{
+	if (AbilityId.IsNone())
+	{
+		return false;
+	}
+
+	for (const FShadowSlaveAspectAbilityInstance& Instance : AbilityInstances)
+	{
+		if (Instance.GetAbilityId() == AbilityId)
+		{
+			return Instance.bIsActive;
+		}
+	}
+
+	return false;
+}
+
 bool UShadowSlaveAspectComponent::UnlockAbility(FName AbilityId)
 {
 	if (AbilityId.IsNone())
@@ -153,28 +189,108 @@ bool UShadowSlaveAspectComponent::FindAbilityInstance(FName AbilityId, FShadowSl
 bool UShadowSlaveAspectComponent::CanActivateAbility(FName AbilityId) const
 {
 	FShadowSlaveAspectAbilityInstance FoundInstance;
-	if (FindAbilityInstance(AbilityId, FoundInstance))
-	{
-		return FoundInstance.bIsUnlocked && FoundInstance.IsValid();
-	}
-	return false;
-}
-
-bool UShadowSlaveAspectComponent::ActivateAbility(FName AbilityId)
-{
-	// Extensibility boundary: actual aspect ability gameplay execution will be integrated in future steps.
-	if (!CanActivateAbility(AbilityId))
+	if (!FindAbilityInstance(AbilityId, FoundInstance) || !FoundInstance.bIsUnlocked || !FoundInstance.IsValid())
 	{
 		return false;
 	}
 
-	// Safe prototype stub: return false until concrete ability execution systems are attached
+	const UShadowSlaveAspectAbilityDefinition* AbilityDef = FoundInstance.AbilityDefinition;
+	if (!FMath::IsFinite(AbilityDef->BaseEssenceCost) || AbilityDef->BaseEssenceCost < 0.0f)
+	{
+		return false;
+	}
+
+	if (AbilityDef->HasRankRequirement())
+	{
+		const AActor* OwnerActor = GetOwner();
+		const UShadowSlaveProgressionComponent* Progression = OwnerActor ? OwnerActor->FindComponentByClass<UShadowSlaveProgressionComponent>() : nullptr;
+		if (!Progression || !Progression->HasKnownRank() || static_cast<uint8>(Progression->GetCharacterRank()) < static_cast<uint8>(AbilityDef->RequiredCharacterRank))
+		{
+			return false;
+		}
+	}
+
+	if (AbilityDef->BaseEssenceCost > 0.0f)
+	{
+		const UShadowSlaveAttributeComponent* Attributes = GetAttributeComponent();
+		if (!Attributes || Attributes->GetCurrentEssence() < AbilityDef->BaseEssenceCost)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UShadowSlaveAspectComponent::ActivateAbility(FName AbilityId)
+{
+	if (bIsProcessingAbilityTransition || AbilityId.IsNone())
+	{
+		return false;
+	}
+
+	for (FShadowSlaveAspectAbilityInstance& Instance : AbilityInstances)
+	{
+		if (Instance.GetAbilityId() != AbilityId)
+		{
+			continue;
+		}
+
+		if (Instance.bIsActive)
+		{
+			return true;
+		}
+
+		if (!CanActivateAbility(AbilityId))
+		{
+			UE_LOG(LogShadowSlave, Verbose, TEXT("UShadowSlaveAspectComponent::ActivateAbility rejected '%s' because its runtime prerequisites are not satisfied."), *AbilityId.ToString());
+			return false;
+		}
+
+		TGuardValue<bool> TransitionGuard(bIsProcessingAbilityTransition, true);
+		const float EssenceCost = Instance.AbilityDefinition->BaseEssenceCost;
+		if (EssenceCost > 0.0f)
+		{
+			UShadowSlaveAttributeComponent* Attributes = GetAttributeComponent();
+			if (!Attributes || !Attributes->ConsumeEssence(EssenceCost))
+			{
+				return false;
+			}
+		}
+
+		Instance.bIsActive = true;
+		OnAbilityActivated.Broadcast(AbilityId, Instance.AbilityDefinition);
+		return true;
+	}
+
 	return false;
 }
 
 bool UShadowSlaveAspectComponent::DeactivateAbility(FName AbilityId)
 {
-	// Extensibility boundary: safe prototype stub
+	if (bIsProcessingAbilityTransition || AbilityId.IsNone())
+	{
+		return false;
+	}
+
+	for (FShadowSlaveAspectAbilityInstance& Instance : AbilityInstances)
+	{
+		if (Instance.GetAbilityId() != AbilityId)
+		{
+			continue;
+		}
+
+		if (!Instance.bIsActive)
+		{
+			return true;
+		}
+
+		TGuardValue<bool> TransitionGuard(bIsProcessingAbilityTransition, true);
+		Instance.bIsActive = false;
+		OnAbilityDeactivated.Broadcast(AbilityId, Instance.AbilityDefinition);
+		return true;
+	}
+
 	return false;
 }
 
