@@ -210,6 +210,36 @@ bool UShadowSlaveGameplaySubsystem::RequestFlowStateTransition(EShadowSlaveGamep
 	return true;
 }
 
+bool UShadowSlaveGameplaySubsystem::StartGameplaySession(APlayerController* InPlayerController, APawn* InPlayerPawn)
+{
+	// 1. Resolve or assign player context if explicitly provided or discoverable
+	if (InPlayerController || InPlayerPawn)
+	{
+		SetPlayerContext(InPlayerController, InPlayerPawn);
+	}
+	else if (!CurrentPlayerPawn.IsValid())
+	{
+		ResolvePlayerContext();
+	}
+
+	// 2. Handle repeated startup idempotently if already in Exploration
+	if (CurrentFlowState == EShadowSlaveGameplayFlowState::Exploration)
+	{
+		return true;
+	}
+
+	// 3. Preserve any ongoing active gameplay flow without resetting or stomping state
+	if (CurrentFlowState != EShadowSlaveGameplayFlowState::None && CurrentFlowState != EShadowSlaveGameplayFlowState::Unknown)
+	{
+		UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveGameplaySubsystem::StartGameplaySession - Active session already in progress (State: %d); preserving flow."),
+			static_cast<uint8>(CurrentFlowState));
+		return true;
+	}
+
+	// 4. Baseline transition into Exploration flow
+	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);
+}
+
 bool UShadowSlaveGameplaySubsystem::BeginExploration()
 {
 	return RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Exploration);

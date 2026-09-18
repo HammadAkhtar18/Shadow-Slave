@@ -8,7 +8,7 @@
 
 /**
  * Foundation Game Mode Base for Shadow Slave.
- * Configures the default player character pawn, player controller, and match rules.
+ * Configures the default player character pawn, player controller, HUD, and session bootstrap.
  */
 UCLASS()
 class SHADOWSLAVE_API AShadowSlaveGameModeBase : public AGameModeBase
@@ -17,4 +17,6 @@ class SHADOWSLAVE_API AShadowSlaveGameModeBase : public AGameModeBase
 
 public:
 	AShadowSlaveGameModeBase();
+
+	virtual void StartPlay() override;
 };

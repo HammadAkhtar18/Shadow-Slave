@@ -242,4 +242,111 @@ bool FShadowSlaveGameplayNightmareScenarioIdPreservedUntilCleanExitTest::RunTest
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayBootstrapToExplorationTest,
+	"ShadowSlave.Gameplay.BootstrapTransitionsToExploration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayBootstrapToExplorationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Initial flow state is None"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::None);
+
+	// Calling StartGameplaySession bootstrap transitions to Exploration
+	TestTrue(TEXT("StartGameplaySession must succeed"), GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("Flow state must advance to Exploration"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+	TestEqual(TEXT("Previous flow state must be None"),
+		GameplaySub->GetPreviousFlowState(), EShadowSlaveGameplayFlowState::None);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayBootstrapIdempotentTest,
+	"ShadowSlave.Gameplay.BootstrapIsIdempotentAndPreservesActiveFlow",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayBootstrapIdempotentTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	// 1. Initial bootstrap to Exploration
+	TestTrue(TEXT("First bootstrap call succeeds"), GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("State is Exploration"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+
+	// 2. Repeated bootstrap call is idempotent and produces no contradictory state
+	TestTrue(TEXT("Repeated bootstrap call succeeds idempotently"), GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("State remains Exploration"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+
+	// 3. If session is already in specialized flow (e.g. Nightmare), StartGameplaySession preserves active flow
+	const FName TestScenario = FName("Scenario_FirstNightmare");
+	TestTrue(TEXT("BeginNightmareFlow succeeds"), GameplaySub->BeginNightmareFlow(TestScenario));
+	TestEqual(TEXT("Flow state is Nightmare"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Nightmare);
+	TestEqual(TEXT("ActiveNightmareScenarioId is set"),
+		GameplaySub->GetActiveNightmareScenarioId(), TestScenario);
+
+	TestTrue(TEXT("StartGameplaySession preserves ongoing Nightmare session"), GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("Flow state remains Nightmare"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Nightmare);
+	TestEqual(TEXT("ActiveNightmareScenarioId is preserved and not cleared"),
+		GameplaySub->GetActiveNightmareScenarioId(), TestScenario);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveGameplayBootstrapPermitsExplorationWithoutPlayerContextTest,
+	"ShadowSlave.Gameplay.BootstrapPermitsExplorationWithoutPlayerContext",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveGameplayBootstrapPermitsExplorationWithoutPlayerContextTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveGameplaySubsystem* GameplaySub = NewObject<UShadowSlaveGameplaySubsystem>();
+	TestNotNull(TEXT("GameplaySubsystem must instantiate"), GameplaySub);
+	if (!GameplaySub)
+	{
+		return false;
+	}
+
+	// In standalone/headless environment without a UWorld or player context:
+	// StartGameplaySession safely enters Exploration without crashing or corrupting state
+	TestTrue(TEXT("StartGameplaySession succeeds without world/player context"),
+		GameplaySub->StartGameplaySession());
+	TestEqual(TEXT("Flow state is Exploration"),
+		GameplaySub->GetCurrentFlowState(), EShadowSlaveGameplayFlowState::Exploration);
+
+	// Player references are safely null
+	TestNull(TEXT("PlayerPawn is safely null"), GameplaySub->GetPlayerPawn());
+	TestNull(TEXT("PlayerController is safely null"), GameplaySub->GetPlayerController());
+	TestNull(TEXT("PlayerWorldState is safely null"), GameplaySub->GetPlayerWorldState());
+	TestNull(TEXT("InteractionTarget is safely null"), GameplaySub->GetInteractionTarget());
+	TestNull(TEXT("CombatInstigator is safely null"), GameplaySub->GetCombatInstigator());
+
+	// Calling SetPlayerContext(nullptr, nullptr) is safe
+	GameplaySub->SetPlayerContext(nullptr, nullptr);
+	TestNull(TEXT("PlayerPawn remains null after SetPlayerContext(nullptr, nullptr)"),
+		GameplaySub->GetPlayerPawn());
+
+	return true;
+}
+
 #endif // WITH_AUTOMATION_TESTS

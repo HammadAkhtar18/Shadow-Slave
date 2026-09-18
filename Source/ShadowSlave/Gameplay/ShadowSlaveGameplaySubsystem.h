@@ -69,6 +69,14 @@ public:
 
 	/* --- High-Level Flow Orchestration --- */
 
+	/**
+	 * Bootstraps the normal runtime gameplay session.
+	 * Resolves player context safely, transitions flow to Exploration, and guarantees idempotency.
+	 * If already in an active flow (such as Exploration or Nightmare), preserves state without resetting.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Gameplay|Flow")
+	bool StartGameplaySession(APlayerController* InPlayerController = nullptr, APawn* InPlayerPawn = nullptr);
+
 	/** Initiates baseline world exploration flow */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Gameplay|Flow")
 	bool BeginExploration();
