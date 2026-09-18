@@ -1,7 +1,113 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Gameplay/ShadowSlaveQuestSubsystem.h"
+#include "Dialogue/ShadowSlaveConversationSubsystem.h"
+#include "Nightmares/ShadowSlaveNightmareSubsystem.h"
+#include "Nightmares/ShadowSlaveNightmareScenarioDefinition.h"
+#include "World/ShadowSlaveWorldStateComponent.h"
+#include "Characters/ShadowSlaveCharacterBase.h"
+#include "Interaction/ShadowSlaveInteractableNPC.h"
+#include "Interaction/ShadowSlaveInteractableActor.h"
+#include "Save/ShadowSlaveSaveableInterface.h"
+#include "Subsystems/SubsystemCollection.h"
+#include "Engine/GameInstance.h"
 #include "ShadowSlave.h"
+
+namespace
+{
+	/** Helper to parse expected world value string according to type rules and fail closed on invalid format */
+	static bool TryParseWorldValue(
+		const FString& InValueStr,
+		const FString* InExplicitTypeStr,
+		EShadowSlaveWorldValueType FallbackType,
+		FShadowSlaveWorldValue& OutParsedValue)
+	{
+		if (InValueStr.IsEmpty() || InValueStr.Equals(TEXT("none"), ESearchCase::IgnoreCase))
+		{
+			return false;
+		}
+
+		EShadowSlaveWorldValueType ExpectedType = EShadowSlaveWorldValueType::None;
+		FString Payload = InValueStr;
+
+		// Prefix check: b:, i:, f:, s:, n:
+		if (InValueStr.Len() >= 2 && InValueStr[1] == TEXT(':'))
+		{
+			const TCHAR Prefix = InValueStr[0];
+			switch (Prefix)
+			{
+			case TEXT('b'): ExpectedType = EShadowSlaveWorldValueType::Bool; break;
+			case TEXT('i'): ExpectedType = EShadowSlaveWorldValueType::Int; break;
+			case TEXT('f'): ExpectedType = EShadowSlaveWorldValueType::Float; break;
+			case TEXT('s'): ExpectedType = EShadowSlaveWorldValueType::String; break;
+			case TEXT('n'): ExpectedType = EShadowSlaveWorldValueType::Name; break;
+			default: break;
+			}
+
+			if (ExpectedType != EShadowSlaveWorldValueType::None)
+			{
+				Payload = InValueStr.RightChop(2);
+			}
+		}
+
+		// Explicit type string check
+		if (ExpectedType == EShadowSlaveWorldValueType::None && InExplicitTypeStr && !InExplicitTypeStr->IsEmpty())
+		{
+			if (InExplicitTypeStr->Equals(TEXT("Bool"), ESearchCase::IgnoreCase) || InExplicitTypeStr->Equals(TEXT("Boolean"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Bool;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Int"), ESearchCase::IgnoreCase) || InExplicitTypeStr->Equals(TEXT("Integer"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Int;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Float"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Float;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("String"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::String;
+			}
+			else if (InExplicitTypeStr->Equals(TEXT("Name"), ESearchCase::IgnoreCase))
+			{
+				ExpectedType = EShadowSlaveWorldValueType::Name;
+			}
+			else
+			{
+				return false;
+			}
+		}
+
+		// Fallback to runtime type
+		if (ExpectedType == EShadowSlaveWorldValueType::None)
+		{
+			ExpectedType = FallbackType;
+		}
+
+		switch (ExpectedType)
+		{
+		case EShadowSlaveWorldValueType::Bool:
+			OutParsedValue = FShadowSlaveWorldValue::MakeBool(Payload.Equals(TEXT("true"), ESearchCase::IgnoreCase) || Payload.Equals(TEXT("1")));
+			return true;
+		case EShadowSlaveWorldValueType::Int:
+			OutParsedValue = FShadowSlaveWorldValue::MakeInt(FCString::Atoi(*Payload));
+			return true;
+		case EShadowSlaveWorldValueType::Float:
+			OutParsedValue = FShadowSlaveWorldValue::MakeFloat(FCString::Atof(*Payload));
+			return true;
+		case EShadowSlaveWorldValueType::String:
+			OutParsedValue = FShadowSlaveWorldValue::MakeString(Payload);
+			return true;
+		case EShadowSlaveWorldValueType::Name:
+			OutParsedValue = FShadowSlaveWorldValue::MakeName(FName(*Payload));
+			return true;
+		default:
+			return false;
+		}
+	}
+}
 
 UShadowSlaveStorySubsystem::UShadowSlaveStorySubsystem()
 {
@@ -9,21 +115,681 @@ UShadowSlaveStorySubsystem::UShadowSlaveStorySubsystem()
 
 void UShadowSlaveStorySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	Collection.InitializeDependency<UShadowSlaveQuestSubsystem>();
+	Collection.InitializeDependency<UShadowSlaveConversationSubsystem>();
+	Collection.InitializeDependency<UShadowSlaveNightmareSubsystem>();
 	Super::Initialize(Collection);
+
 	RegisteredDefinitions.Empty();
 	StoryRuntimeStates.Empty();
 	RegisteredContentDefinitions.Empty();
 	StoryContentRuntimeStates.Empty();
+	RegisteredWorldStateSources.Empty();
 	bIsRestoringState = false;
+	bIsBridgeActive = false;
+	bIsProcessingProgression = false;
+
+	InitializeProgressionBridge();
 }
 
 void UShadowSlaveStorySubsystem::Deinitialize()
 {
+	ShutdownProgressionBridge();
+
 	RegisteredDefinitions.Empty();
 	StoryRuntimeStates.Empty();
 	RegisteredContentDefinitions.Empty();
 	StoryContentRuntimeStates.Empty();
+	RegisteredWorldStateSources.Empty();
+
 	Super::Deinitialize();
+}
+
+/* =========================================================================
+ * Progression Bridge Lifecycle & Binding (Step 26)
+ * ========================================================================= */
+
+void UShadowSlaveStorySubsystem::InitializeProgressionBridge()
+{
+	if (bIsBridgeActive)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+	{
+		QuestSub->OnQuestCompleted.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleQuestCompleted);
+		QuestSub->OnQuestFailed.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleQuestFailed);
+	}
+
+	if (UShadowSlaveConversationSubsystem* ConvSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+	{
+		ConvSub->OnConversationCompleted.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleConversationCompleted);
+		ConvSub->OnConversationAborted.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleConversationAborted);
+	}
+
+	if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+	{
+		NightmareSub->OnScenarioCompleted.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioCompleted);
+		NightmareSub->OnScenarioFailed.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioFailed);
+		NightmareSub->OnScenarioAborted.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted);
+	}
+
+	bIsBridgeActive = true;
+}
+
+void UShadowSlaveStorySubsystem::ShutdownProgressionBridge()
+{
+	if (!bIsBridgeActive)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (GI)
+	{
+		if (UShadowSlaveQuestSubsystem* QuestSub = GI->GetSubsystem<UShadowSlaveQuestSubsystem>())
+		{
+			QuestSub->OnQuestCompleted.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleQuestCompleted);
+			QuestSub->OnQuestFailed.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleQuestFailed);
+		}
+
+		if (UShadowSlaveConversationSubsystem* ConvSub = GI->GetSubsystem<UShadowSlaveConversationSubsystem>())
+		{
+			ConvSub->OnConversationCompleted.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleConversationCompleted);
+			ConvSub->OnConversationAborted.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleConversationAborted);
+		}
+
+		if (UShadowSlaveNightmareSubsystem* NightmareSub = GI->GetSubsystem<UShadowSlaveNightmareSubsystem>())
+		{
+			NightmareSub->OnScenarioCompleted.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioCompleted);
+			NightmareSub->OnScenarioFailed.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioFailed);
+			NightmareSub->OnScenarioAborted.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted);
+		}
+	}
+
+	for (auto It = RegisteredWorldStateSources.CreateIterator(); It; ++It)
+	{
+		if (UShadowSlaveWorldStateComponent* WSComp = It->Get())
+		{
+			WSComp->OnWorldStateChanged.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleWorldStateChanged);
+		}
+	}
+	RegisteredWorldStateSources.Empty();
+
+	bIsBridgeActive = false;
+}
+
+void UShadowSlaveStorySubsystem::EnsureProgressionBridgeBound()
+{
+	if (!bIsBridgeActive)
+	{
+		InitializeProgressionBridge();
+	}
+}
+
+void UShadowSlaveStorySubsystem::RegisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent)
+{
+	if (!WorldStateComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveWorldStateComponent> WeakComp(WorldStateComponent);
+	if (!RegisteredWorldStateSources.Contains(WeakComp))
+	{
+		RegisteredWorldStateSources.Add(WeakComp);
+		WorldStateComponent->OnWorldStateChanged.AddUniqueDynamic(this, &UShadowSlaveStorySubsystem::HandleWorldStateChanged);
+	}
+}
+
+void UShadowSlaveStorySubsystem::UnregisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent)
+{
+	if (!WorldStateComponent)
+	{
+		return;
+	}
+
+	TWeakObjectPtr<UShadowSlaveWorldStateComponent> WeakComp(WorldStateComponent);
+	if (RegisteredWorldStateSources.Contains(WeakComp))
+	{
+		WorldStateComponent->OnWorldStateChanged.RemoveDynamic(this, &UShadowSlaveStorySubsystem::HandleWorldStateChanged);
+		RegisteredWorldStateSources.Remove(WeakComp);
+	}
+}
+
+/* =========================================================================
+ * Progression Bridge Domain Event Handlers (Step 26)
+ * ========================================================================= */
+
+void UShadowSlaveStorySubsystem::HandleQuestCompleted(FName QuestId)
+{
+	if (bIsRestoringState || QuestId.IsNone())
+	{
+		return;
+	}
+
+	NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType::Quest, QuestId);
+}
+
+void UShadowSlaveStorySubsystem::HandleQuestFailed(FName QuestId)
+{
+	if (bIsRestoringState || QuestId.IsNone())
+	{
+		return;
+	}
+
+	NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType::Quest, QuestId);
+}
+
+void UShadowSlaveStorySubsystem::HandleConversationCompleted(FName DialogueId)
+{
+	if (bIsRestoringState || DialogueId.IsNone())
+	{
+		return;
+	}
+
+	NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType::Dialogue, DialogueId);
+}
+
+void UShadowSlaveStorySubsystem::HandleConversationAborted(FName DialogueId, FName LastNodeId)
+{
+	if (bIsRestoringState || DialogueId.IsNone())
+	{
+		return;
+	}
+
+	// Aborting dialogue leaves the entry active so player can re-engage
+	UE_LOG(LogShadowSlave, Verbose, TEXT("UShadowSlaveStorySubsystem::HandleConversationAborted - Dialogue '%s' aborted at node '%s'. Leaving entry active."),
+		*DialogueId.ToString(), *LastNodeId.ToString());
+}
+
+void UShadowSlaveStorySubsystem::HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
+{
+	if (bIsRestoringState || !ScenarioDef || ScenarioDef->ScenarioId.IsNone())
+	{
+		return;
+	}
+
+	NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->ScenarioId);
+}
+
+void UShadowSlaveStorySubsystem::HandleNightmareScenarioFailed(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, EShadowSlaveScenarioFailureReason Reason)
+{
+	if (bIsRestoringState || !ScenarioDef || ScenarioDef->ScenarioId.IsNone())
+	{
+		return;
+	}
+
+	NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->ScenarioId);
+}
+
+void UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
+{
+	if (bIsRestoringState || !ScenarioDef)
+	{
+		return;
+	}
+
+	UE_LOG(LogShadowSlave, Verbose, TEXT("UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted - Scenario '%s' aborted. Leaving entry active."),
+		*ScenarioDef->ScenarioId.ToString());
+}
+
+void UShadowSlaveStorySubsystem::HandleWorldStateChanged(
+	FName Key,
+	const FShadowSlaveWorldValue& NewValue,
+	const FShadowSlaveWorldValue& OldValue,
+	AActor* OwningActor)
+{
+	if (bIsRestoringState || Key.IsNone())
+	{
+		return;
+	}
+
+	NotifyWorldStateChanged(Key, NewValue, OwningActor);
+}
+
+bool UShadowSlaveStorySubsystem::NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType ContentType, FName TargetId)
+{
+	if (bIsRestoringState || ContentType == EShadowSlaveStoryContentType::None || TargetId.IsNone())
+	{
+		return false;
+	}
+
+	bool bAnyProgressed = false;
+
+	TArray<FName> ActiveContentIds;
+	for (const auto& Pair : StoryContentRuntimeStates)
+	{
+		if (Pair.Value.State == EShadowSlaveStoryContentState::Active)
+		{
+			ActiveContentIds.Add(Pair.Key);
+		}
+	}
+
+	for (const FName& StoryContentId : ActiveContentIds)
+	{
+		const FShadowSlaveStoryContentRuntimeState* StatePtr = StoryContentRuntimeStates.Find(StoryContentId);
+		if (!StatePtr || StatePtr->State != EShadowSlaveStoryContentState::Active)
+		{
+			continue;
+		}
+
+		const FName ActiveEntryId = StatePtr->CurrentActiveEntryId;
+		if (ActiveEntryId.IsNone())
+		{
+			continue;
+		}
+
+		const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+		if (!Def)
+		{
+			continue;
+		}
+
+		const FShadowSlaveStoryContentEntry* EntryDef = Def->FindContentEntry(ActiveEntryId);
+		if (!EntryDef || EntryDef->ContentType != ContentType || EntryDef->TargetId != TargetId)
+		{
+			continue;
+		}
+
+		if (GetStoryContentEntryState(StoryContentId, ActiveEntryId) == EShadowSlaveStoryContentState::Active)
+		{
+			if (CompleteStoryContentEntry(StoryContentId, ActiveEntryId))
+			{
+				bAnyProgressed = true;
+			}
+		}
+	}
+
+	return bAnyProgressed;
+}
+
+bool UShadowSlaveStorySubsystem::NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType ContentType, FName TargetId)
+{
+	if (bIsRestoringState || ContentType == EShadowSlaveStoryContentType::None || TargetId.IsNone())
+	{
+		return false;
+	}
+
+	bool bAnyHandled = false;
+
+	TArray<FName> ActiveContentIds;
+	for (const auto& Pair : StoryContentRuntimeStates)
+	{
+		if (Pair.Value.State == EShadowSlaveStoryContentState::Active)
+		{
+			ActiveContentIds.Add(Pair.Key);
+		}
+	}
+
+	for (const FName& StoryContentId : ActiveContentIds)
+	{
+		const FShadowSlaveStoryContentRuntimeState* StatePtr = StoryContentRuntimeStates.Find(StoryContentId);
+		if (!StatePtr || StatePtr->State != EShadowSlaveStoryContentState::Active)
+		{
+			continue;
+		}
+
+		const FName ActiveEntryId = StatePtr->CurrentActiveEntryId;
+		if (ActiveEntryId.IsNone())
+		{
+			continue;
+		}
+
+		const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+		if (!Def)
+		{
+			continue;
+		}
+
+		const FShadowSlaveStoryContentEntry* EntryDef = Def->FindContentEntry(ActiveEntryId);
+		if (!EntryDef || EntryDef->ContentType != ContentType || EntryDef->TargetId != TargetId)
+		{
+			continue;
+		}
+
+		if (GetStoryContentEntryState(StoryContentId, ActiveEntryId) == EShadowSlaveStoryContentState::Active)
+		{
+			if (FailStoryContentEntry(StoryContentId, ActiveEntryId))
+			{
+				bAnyHandled = true;
+			}
+		}
+	}
+
+	return bAnyHandled;
+}
+
+bool UShadowSlaveStorySubsystem::NotifyWorldStateChanged(FName StateKey, const FShadowSlaveWorldValue& NewValue, AActor* OwningActor)
+{
+	if (bIsRestoringState || StateKey.IsNone())
+	{
+		return false;
+	}
+
+	bool bAnyProgressed = false;
+
+	TArray<FName> ActiveContentIds;
+	for (const auto& Pair : StoryContentRuntimeStates)
+	{
+		if (Pair.Value.State == EShadowSlaveStoryContentState::Active)
+		{
+			ActiveContentIds.Add(Pair.Key);
+		}
+	}
+
+	for (const FName& StoryContentId : ActiveContentIds)
+	{
+		const FShadowSlaveStoryContentRuntimeState* StatePtr = StoryContentRuntimeStates.Find(StoryContentId);
+		if (!StatePtr || StatePtr->State != EShadowSlaveStoryContentState::Active)
+		{
+			continue;
+		}
+
+		const FName ActiveEntryId = StatePtr->CurrentActiveEntryId;
+		if (ActiveEntryId.IsNone())
+		{
+			continue;
+		}
+
+		const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+		if (!Def)
+		{
+			continue;
+		}
+
+		const FShadowSlaveStoryContentEntry* EntryDef = Def->FindContentEntry(ActiveEntryId);
+		if (!EntryDef || EntryDef->ContentType != EShadowSlaveStoryContentType::WorldState || EntryDef->TargetId != StateKey)
+		{
+			continue;
+		}
+
+		if (GetStoryContentEntryState(StoryContentId, ActiveEntryId) != EShadowSlaveStoryContentState::Active)
+		{
+			continue;
+		}
+
+		if (EvaluateWorldStateCondition(*EntryDef, NewValue, OwningActor))
+		{
+			if (CompleteStoryContentEntry(StoryContentId, ActiveEntryId))
+			{
+				bAnyProgressed = true;
+			}
+		}
+	}
+
+	return bAnyProgressed;
+}
+
+bool UShadowSlaveStorySubsystem::EvaluateWorldStateCondition(
+	const FShadowSlaveStoryContentEntry& EntryDef,
+	const FShadowSlaveWorldValue& NewValue,
+	AActor* OwningActor) const
+{
+	// 1. Optional actor validation
+	if (const FString* ExpectedActorStr = EntryDef.Metadata.Find(TEXT("ActorId")))
+	{
+		if (!ExpectedActorStr->IsEmpty())
+		{
+			if (!OwningActor)
+			{
+				return false;
+			}
+
+			const FName ExpectedActorName(*(*ExpectedActorStr));
+			bool bActorMatches = false;
+
+			if (const AShadowSlaveCharacterBase* Char = Cast<AShadowSlaveCharacterBase>(OwningActor))
+			{
+				if (Char->GetCharacterId() == ExpectedActorName)
+				{
+					bActorMatches = true;
+				}
+			}
+
+			if (!bActorMatches)
+			{
+				if (const AShadowSlaveInteractableNPC* NPC = Cast<AShadowSlaveInteractableNPC>(OwningActor))
+				{
+					if (NPC->GetNPCId() == ExpectedActorName)
+					{
+						bActorMatches = true;
+					}
+				}
+			}
+
+			if (!bActorMatches)
+			{
+				if (const AShadowSlaveInteractableActor* InteractableActor = Cast<AShadowSlaveInteractableActor>(OwningActor))
+				{
+					if (InteractableActor->GetInteractionId() == ExpectedActorName ||
+					    InteractableActor->GetPersistentSaveId() == ExpectedActorName)
+					{
+						bActorMatches = true;
+					}
+				}
+			}
+
+			if (!bActorMatches && OwningActor->GetClass()->ImplementsInterface(UShadowSlaveSaveableInterface::StaticClass()))
+			{
+				bActorMatches = (IShadowSlaveSaveableInterface::Execute_GetPersistentSaveId(OwningActor) == ExpectedActorName);
+			}
+
+			if (!bActorMatches && OwningActor->ActorHasTag(ExpectedActorName))
+			{
+				bActorMatches = true;
+			}
+
+			if (!bActorMatches)
+			{
+				return false;
+			}
+		}
+	}
+
+	// 2. Value comparison
+	const FString* ExpectedValStr = EntryDef.Metadata.Find(TEXT("Value"));
+	if (!ExpectedValStr)
+	{
+		ExpectedValStr = EntryDef.Metadata.Find(TEXT("ExpectedValue"));
+	}
+
+	if (ExpectedValStr)
+	{
+		const FString* ExplicitTypeStr = EntryDef.Metadata.Find(TEXT("ValueType"));
+		if (!ExplicitTypeStr)
+		{
+			ExplicitTypeStr = EntryDef.Metadata.Find(TEXT("Type"));
+		}
+
+		FShadowSlaveWorldValue ExpectedVal;
+		if (!TryParseWorldValue(*ExpectedValStr, ExplicitTypeStr, NewValue.ValueType, ExpectedVal))
+		{
+			return false;
+		}
+
+		if (NewValue.ValueType != ExpectedVal.ValueType || NewValue.ValueType == EShadowSlaveWorldValueType::None)
+		{
+			return false;
+		}
+
+		const FString* OpStr = EntryDef.Metadata.Find(TEXT("Op"));
+		if (!OpStr)
+		{
+			OpStr = EntryDef.Metadata.Find(TEXT("Operator"));
+		}
+
+		if (OpStr && (*OpStr == TEXT(">=") || *OpStr == TEXT(">")))
+		{
+			if (NewValue.ValueType == EShadowSlaveWorldValueType::Int)
+			{
+				return (*OpStr == TEXT(">=")) ? (NewValue.IntValue >= ExpectedVal.IntValue) : (NewValue.IntValue > ExpectedVal.IntValue);
+			}
+			else if (NewValue.ValueType == EShadowSlaveWorldValueType::Float)
+			{
+				return (*OpStr == TEXT(">=")) ? (NewValue.FloatValue >= ExpectedVal.FloatValue) : (NewValue.FloatValue > ExpectedVal.FloatValue);
+			}
+			return false;
+		}
+
+		return NewValue == ExpectedVal;
+	}
+
+	// 3. Fallback: non-default / active value
+	switch (NewValue.ValueType)
+	{
+	case EShadowSlaveWorldValueType::Bool:
+		return NewValue.BoolValue;
+	case EShadowSlaveWorldValueType::Int:
+		return NewValue.IntValue > 0;
+	case EShadowSlaveWorldValueType::Float:
+		return NewValue.FloatValue > 0.0f;
+	case EShadowSlaveWorldValueType::String:
+		return !NewValue.StringValue.IsEmpty();
+	case EShadowSlaveWorldValueType::Name:
+		return !NewValue.NameValue.IsNone();
+	default:
+		return false;
+	}
+}
+
+FName UShadowSlaveStorySubsystem::GetActiveObservedTargetId(FName StoryContentId) const
+{
+	if (StoryContentId.IsNone())
+	{
+		return NAME_None;
+	}
+
+	const FName ActiveEntryId = GetCurrentActiveStoryContentEntry(StoryContentId);
+	if (ActiveEntryId.IsNone())
+	{
+		return NAME_None;
+	}
+
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	if (!Def)
+	{
+		return NAME_None;
+	}
+
+	if (const FShadowSlaveStoryContentEntry* Entry = Def->FindContentEntry(ActiveEntryId))
+	{
+		return Entry->TargetId;
+	}
+
+	return NAME_None;
+}
+
+EShadowSlaveStoryContentType UShadowSlaveStorySubsystem::GetActiveObservedContentType(FName StoryContentId) const
+{
+	if (StoryContentId.IsNone())
+	{
+		return EShadowSlaveStoryContentType::None;
+	}
+
+	const FName ActiveEntryId = GetCurrentActiveStoryContentEntry(StoryContentId);
+	if (ActiveEntryId.IsNone())
+	{
+		return EShadowSlaveStoryContentType::None;
+	}
+
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	if (!Def)
+	{
+		return EShadowSlaveStoryContentType::None;
+	}
+
+	if (const FShadowSlaveStoryContentEntry* Entry = Def->FindContentEntry(ActiveEntryId))
+	{
+		return Entry->ContentType;
+	}
+
+	return EShadowSlaveStoryContentType::None;
+}
+
+FName UShadowSlaveStorySubsystem::FindNextProgressionEntryId(FName StoryContentId) const
+{
+	if (StoryContentId.IsNone())
+	{
+		return NAME_None;
+	}
+
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	if (!Def)
+	{
+		return NAME_None;
+	}
+
+	for (const FShadowSlaveStoryContentEntry& Entry : Def->ContentEntries)
+	{
+		const EShadowSlaveStoryContentState EntryState = GetStoryContentEntryState(StoryContentId, Entry.ContentId);
+		if (EntryState == EShadowSlaveStoryContentState::Completed ||
+		    EntryState == EShadowSlaveStoryContentState::Failed ||
+		    EntryState == EShadowSlaveStoryContentState::Skipped)
+		{
+			continue;
+		}
+
+		if (AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, Entry.ContentId))
+		{
+			return Entry.ContentId;
+		}
+	}
+
+	return NAME_None;
+}
+
+void UShadowSlaveStorySubsystem::AdvanceStoryContentProgression(FName StoryContentId)
+{
+	if (bIsRestoringState || bIsProcessingProgression || StoryContentId.IsNone())
+	{
+		return;
+	}
+
+	TGuardValue<bool> ProgressionGuard(bIsProcessingProgression, true);
+
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	if (!Def)
+	{
+		return;
+	}
+
+	FShadowSlaveStoryContentRuntimeState* RuntimeState = StoryContentRuntimeStates.Find(StoryContentId);
+	if (!RuntimeState || RuntimeState->State != EShadowSlaveStoryContentState::Active)
+	{
+		return;
+	}
+
+	// If an entry is currently active, do not preempt it
+	if (!RuntimeState->CurrentActiveEntryId.IsNone())
+	{
+		const EShadowSlaveStoryContentState CurrentEntryState = GetStoryContentEntryState(StoryContentId, RuntimeState->CurrentActiveEntryId);
+		if (CurrentEntryState == EShadowSlaveStoryContentState::Active)
+		{
+			return;
+		}
+	}
+
+	// Find next valid entry in authored ContentEntries array order
+	const FName NextEntryId = FindNextProgressionEntryId(StoryContentId);
+	if (!NextEntryId.IsNone())
+	{
+		ActivateStoryContentEntry(StoryContentId, NextEntryId);
+		return;
+	}
+
+	// No more entries can be activated. If all required entries are completed, complete parent content!
+	if (AreAllRequiredContentEntriesCompleted(StoryContentId))
+	{
+		CompleteStoryContent(StoryContentId);
+	}
 }
 
 /* =========================================================================
@@ -402,10 +1168,20 @@ bool UShadowSlaveStorySubsystem::AreStoryContentEntryPrerequisitesSatisfied(FNam
 			continue;
 		}
 
-		if (GetStoryContentEntryState(StoryContentId, PrereqEntryId) != EShadowSlaveStoryContentState::Completed)
+		const EShadowSlaveStoryContentState PrereqState = GetStoryContentEntryState(StoryContentId, PrereqEntryId);
+		if (PrereqState == EShadowSlaveStoryContentState::Completed)
 		{
-			return false;
+			continue;
 		}
+
+		// Optional entries that were skipped do not permanently block downstream progression
+		const FShadowSlaveStoryContentEntry* PrereqDef = Def->FindContentEntry(PrereqEntryId);
+		if (PrereqDef && PrereqDef->bIsOptional && PrereqState == EShadowSlaveStoryContentState::Skipped)
+		{
+			continue;
+		}
+
+		return false;
 	}
 
 	return true;
@@ -645,7 +1421,7 @@ void UShadowSlaveStorySubsystem::ResetAllStoryStates()
 }
 
 /* =========================================================================
- * Story Content Transitions (Step 25 Chapters/Arcs)
+ * Story Content Transitions (Step 25 & 26 Chapters/Arcs)
  * ========================================================================= */
 
 bool UShadowSlaveStorySubsystem::CanTransitionStoryContent(FName StoryContentId, EShadowSlaveStoryContentState CurrentState, EShadowSlaveStoryContentState NewState) const
@@ -660,6 +1436,7 @@ bool UShadowSlaveStorySubsystem::CanTransitionStoryContent(FName StoryContentId,
 		return true;
 	}
 
+	// Terminal states cannot leave their state via normal transitions
 	if (CurrentState == EShadowSlaveStoryContentState::Completed ||
 	    CurrentState == EShadowSlaveStoryContentState::Failed ||
 	    CurrentState == EShadowSlaveStoryContentState::Skipped)
@@ -703,8 +1480,11 @@ bool UShadowSlaveStorySubsystem::CanTransitionStoryContent(FName StoryContentId,
 		return false;
 
 	case EShadowSlaveStoryContentState::Active:
-		if (NewState == EShadowSlaveStoryContentState::Completed ||
-		    NewState == EShadowSlaveStoryContentState::Failed ||
+		if (NewState == EShadowSlaveStoryContentState::Completed)
+		{
+			return AreAllRequiredContentEntriesCompleted(StoryContentId);
+		}
+		if (NewState == EShadowSlaveStoryContentState::Failed ||
 		    NewState == EShadowSlaveStoryContentState::Skipped)
 		{
 			return true;
@@ -766,7 +1546,22 @@ bool UShadowSlaveStorySubsystem::SetStoryContentState(FName StoryContentId, ESha
 
 bool UShadowSlaveStorySubsystem::ActivateStoryContent(FName StoryContentId)
 {
-	return SetStoryContentState(StoryContentId, EShadowSlaveStoryContentState::Active);
+	const bool bSuccess = SetStoryContentState(StoryContentId, EShadowSlaveStoryContentState::Active);
+	if (!bSuccess)
+	{
+		return false;
+	}
+
+	if (!bIsRestoringState && !bIsProcessingProgression)
+	{
+		const FName ActiveEntry = GetCurrentActiveStoryContentEntry(StoryContentId);
+		if (ActiveEntry.IsNone())
+		{
+			AdvanceStoryContentProgression(StoryContentId);
+		}
+	}
+
+	return true;
 }
 
 bool UShadowSlaveStorySubsystem::CompleteStoryContent(FName StoryContentId)
@@ -884,7 +1679,7 @@ void UShadowSlaveStorySubsystem::ResetAllStoryContentStates()
 }
 
 /* =========================================================================
- * Story Content Entry Transitions (Step 25 Chapters/Arcs)
+ * Story Content Entry Transitions (Step 25 & 26 Chapters/Arcs)
  * ========================================================================= */
 
 bool UShadowSlaveStorySubsystem::CanTransitionStoryContentEntry(
@@ -1042,22 +1837,117 @@ bool UShadowSlaveStorySubsystem::SetStoryContentEntryState(FName StoryContentId,
 
 bool UShadowSlaveStorySubsystem::ActivateStoryContentEntry(FName StoryContentId, FName EntryId)
 {
+	if (StoryContentId.IsNone() || EntryId.IsNone())
+	{
+		return false;
+	}
+
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	if (!Def)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ActivateStoryContentEntry - Missing definition for '%s'"),
+			*StoryContentId.ToString());
+		return false;
+	}
+
+	const FShadowSlaveStoryContentEntry* EntryDef = Def->FindContentEntry(EntryId);
+	if (!EntryDef)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ActivateStoryContentEntry - Entry '%s' not found in definition '%s'"),
+			*EntryId.ToString(), *StoryContentId.ToString());
+		return false;
+	}
+
+	// Validate prerequisites
+	if (!AreStoryContentEntryPrerequisitesSatisfied(StoryContentId, EntryId))
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ActivateStoryContentEntry - Prerequisites not satisfied for entry '%s' in '%s'"),
+			*EntryId.ToString(), *StoryContentId.ToString());
+		return false;
+	}
+
+	// If parent content is Available, transition it to Active first (Available -> Active)
+	const EShadowSlaveStoryContentState CurrentArcState = GetStoryContentState(StoryContentId);
+	if (CurrentArcState == EShadowSlaveStoryContentState::Available)
+	{
+		if (!SetStoryContentState(StoryContentId, EShadowSlaveStoryContentState::Active))
+		{
+			return false;
+		}
+	}
+	else if (CurrentArcState != EShadowSlaveStoryContentState::Active)
+	{
+		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::ActivateStoryContentEntry - Cannot activate entry '%s' because parent '%s' is in state %d"),
+			*EntryId.ToString(), *StoryContentId.ToString(), static_cast<uint8>(CurrentArcState));
+		return false;
+	}
+
+	// Establish external domain observation if not already bound
+	EnsureProgressionBridgeBound();
+
+	// Set entry state through existing authoritative state mechanism
 	return SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Active);
 }
 
 bool UShadowSlaveStorySubsystem::CompleteStoryContentEntry(FName StoryContentId, FName EntryId)
 {
-	return SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Completed);
+	const bool bSuccess = SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Completed);
+	if (!bSuccess)
+	{
+		return false;
+	}
+
+	if (!bIsRestoringState && !bIsProcessingProgression)
+	{
+		AdvanceStoryContentProgression(StoryContentId);
+	}
+
+	return true;
 }
 
 bool UShadowSlaveStorySubsystem::FailStoryContentEntry(FName StoryContentId, FName EntryId)
 {
-	return SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Failed);
+	const UShadowSlaveStoryContentDefinition* Def = GetStoryContentDefinition(StoryContentId);
+	const FShadowSlaveStoryContentEntry* EntryDef = Def ? Def->FindContentEntry(EntryId) : nullptr;
+	const bool bIsOptional = EntryDef ? EntryDef->bIsOptional : false;
+
+	const bool bSuccess = SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Failed);
+	if (!bSuccess)
+	{
+		return false;
+	}
+
+	if (bIsRestoringState || bIsProcessingProgression)
+	{
+		return true;
+	}
+
+	if (bIsOptional)
+	{
+		AdvanceStoryContentProgression(StoryContentId);
+	}
+	else
+	{
+		FailStoryContent(StoryContentId);
+	}
+
+	return true;
 }
 
 bool UShadowSlaveStorySubsystem::SkipStoryContentEntry(FName StoryContentId, FName EntryId)
 {
-	return SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Skipped);
+	const bool bSuccess = SetStoryContentEntryState(StoryContentId, EntryId, EShadowSlaveStoryContentState::Skipped);
+	if (!bSuccess)
+	{
+		return false;
+	}
+
+	if (!bIsRestoringState && !bIsProcessingProgression)
+	{
+		AdvanceStoryContentProgression(StoryContentId);
+	}
+
+	return true;
 }
 
 bool UShadowSlaveStorySubsystem::SetCurrentActiveStoryContentEntry(FName StoryContentId, FName EntryId)
@@ -1341,6 +2231,8 @@ bool UShadowSlaveStorySubsystem::ImportSaveData(const FShadowSlaveStorySaveData&
 			RuntimeEntry.CurrentActiveEntryId = NAME_None;
 		}
 	}
+
+	EnsureProgressionBridgeBound();
 
 	return true;
 }

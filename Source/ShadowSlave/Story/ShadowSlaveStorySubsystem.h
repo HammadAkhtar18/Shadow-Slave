@@ -8,16 +8,24 @@
 #include "Story/ShadowSlaveStoryDefinition.h"
 #include "Story/ShadowSlaveStoryContentTypes.h"
 #include "Story/ShadowSlaveStoryContentDefinition.h"
+#include "World/ShadowSlaveWorldTypes.h"
+#include "Nightmares/ShadowSlaveNightmareTypes.h"
 #include "ShadowSlaveStorySubsystem.generated.h"
 
+class UShadowSlaveNightmareScenarioDefinition;
+class UShadowSlaveWorldStateComponent;
+class AActor;
+
 /**
- * Game Instance Subsystem responsible for authoritative story progression and narrative beat lifecycle.
+ * Game Instance Subsystem responsible for authoritative story progression, narrative beat lifecycle,
+ * and data-driven story content (chapter/arc) orchestration via the Progression Bridge.
  *
  * RESPONSIBILITIES:
  * - Registers static story definitions and story content definitions (chapters/arcs).
  * - Tracks runtime lifecycle state (Locked, Available, Active, Completed, Failed, Skipped).
  * - Enforces deterministic transition guards and prerequisite completion checks.
  * - Manages active story steps and chronological content entries.
+ * - Coordinates with external domain subsystems (Quests, Dialogue, Nightmares, WorldState) via Progression Bridge.
  * - Emits progression event streams only when state or entry genuinely changes.
  * - Exports and imports passive, decoupled save data with zero event emission during restoration.
  * - Operates event-driven with zero Tick overhead.
@@ -182,13 +190,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
 	void ResetAllStoryContentStates();
 
-	/* --- Story Content Entry Transitions (Step 25) --- */
+	/* --- Story Content Entry Transitions (Step 25 & 26) --- */
 
 	/** Transitions a child content entry to a new lifecycle state */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
 	bool SetStoryContentEntryState(FName StoryContentId, FName EntryId, EShadowSlaveStoryContentState NewState);
 
-	/** Helper to transition content entry to Active */
+	/** Activates a child content entry and establishes domain observation */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
 	bool ActivateStoryContentEntry(FName StoryContentId, FName EntryId);
 
@@ -207,6 +215,56 @@ public:
 	/** Explicitly sets the currently active entry ID on an Active story content */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|ContentTransitions")
 	bool SetCurrentActiveStoryContentEntry(FName StoryContentId, FName EntryId);
+
+	/* --- Progression Bridge API (Step 26) --- */
+
+	/** Initializes event bindings with external domain subsystems (Quest, Dialogue, Nightmare) */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Bridge")
+	void InitializeProgressionBridge();
+
+	/** Shuts down all event bindings with external domain subsystems */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Bridge")
+	void ShutdownProgressionBridge();
+
+	/** Checks if the progression bridge is currently active */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|Bridge")
+	bool IsProgressionBridgeActive() const { return bIsBridgeActive; }
+
+	/** Registers an actor's WorldStateComponent as an event source for WorldState story content */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Bridge")
+	void RegisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent);
+
+	/** Unregisters an actor's WorldStateComponent from story content observation */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Bridge")
+	void UnregisterWorldStateSource(UShadowSlaveWorldStateComponent* WorldStateComponent);
+
+	/** Direct notification API when an external domain target reaches completion */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Progression")
+	bool NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType ContentType, FName TargetId);
+
+	/** Direct notification API when an external domain target fails */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Progression")
+	bool NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType ContentType, FName TargetId);
+
+	/** Direct notification API when a world state key changes */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Progression")
+	bool NotifyWorldStateChanged(FName StateKey, const FShadowSlaveWorldValue& NewValue, AActor* OwningActor = nullptr);
+
+	/** Queries the TargetId currently being observed by an active story content */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|Bridge")
+	FName GetActiveObservedTargetId(FName StoryContentId) const;
+
+	/** Queries the ContentType currently being observed by an active story content */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|Bridge")
+	EShadowSlaveStoryContentType GetActiveObservedContentType(FName StoryContentId) const;
+
+	/** Finds the next valid entry in authored array order that can be activated */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Story|Progression")
+	FName FindNextProgressionEntryId(FName StoryContentId) const;
+
+	/** Evaluates and advances an active story content to its next authored entry or completion */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Story|Progression")
+	void AdvanceStoryContentProgression(FName StoryContentId);
 
 	/* --- Story Step Support --- */
 
@@ -250,6 +308,38 @@ public:
 	FOnShadowSlaveStoryContentEntryStateChangedSignature OnStoryContentEntryStateChanged;
 
 protected:
+	/* --- Progression Bridge Event Handlers (Step 26) --- */
+
+	UFUNCTION()
+	void HandleQuestCompleted(FName QuestId);
+
+	UFUNCTION()
+	void HandleQuestFailed(FName QuestId);
+
+	UFUNCTION()
+	void HandleConversationCompleted(FName DialogueId);
+
+	UFUNCTION()
+	void HandleConversationAborted(FName DialogueId, FName LastNodeId);
+
+	UFUNCTION()
+	void HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef);
+
+	UFUNCTION()
+	void HandleNightmareScenarioFailed(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, EShadowSlaveScenarioFailureReason Reason);
+
+	UFUNCTION()
+	void HandleNightmareScenarioAborted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef);
+
+	UFUNCTION()
+	void HandleWorldStateChanged(FName Key, const FShadowSlaveWorldValue& NewValue, const FShadowSlaveWorldValue& OldValue, AActor* OwningActor);
+
+	/** Internal helper to evaluate whether a world-state value change satisfies an entry's condition */
+	bool EvaluateWorldStateCondition(const FShadowSlaveStoryContentEntry& EntryDef, const FShadowSlaveWorldValue& NewValue, AActor* OwningActor) const;
+
+	/** Ensures progression bridge is bound if not already */
+	void EnsureProgressionBridgeBound();
+
 	/** Static story definitions registered by StoryId */
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UShadowSlaveStoryDefinition>> RegisteredDefinitions;
@@ -266,8 +356,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Story|Content")
 	TMap<FName, FShadowSlaveStoryContentRuntimeState> StoryContentRuntimeStates;
 
+	/** Registered WorldStateComponent sources for world state observation */
+	TSet<TWeakObjectPtr<UShadowSlaveWorldStateComponent>> RegisteredWorldStateSources;
+
 	/** Internal flag indicating save data restoration is in progress (suppresses gameplay events) */
 	bool bIsRestoringState = false;
+
+	/** Internal flag indicating whether the progression bridge is active */
+	bool bIsBridgeActive = false;
+
+	/** Internal re-entrancy guard for progression advancement */
+	bool bIsProcessingProgression = false;
 
 	/** Internal helper to determine if a transition from CurrentState to NewState is permitted */
 	bool CanTransition(FName StoryId, EShadowSlaveStoryState CurrentState, EShadowSlaveStoryState NewState) const;
