@@ -27,6 +27,8 @@
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "Dialogue/ShadowSlaveConversationSubsystem.h"
 #include "World/ShadowSlaveWorldStateComponent.h"
+#include "StatusEffects/ShadowSlaveStatusEffectComponent.h"
+#include "StatusEffects/ShadowSlaveStatusEffectDefinition.h"
 #include "ShadowSlave.h"
 
 UShadowSlaveSaveSubsystem::UShadowSlaveSaveSubsystem()
@@ -191,6 +193,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 		{
 			CaptureEquipment(Equip, SaveObject->EquipmentData);
 		}
+
+		if (UShadowSlaveStatusEffectComponent* StatusComp = PlayerPawn->FindComponentByClass<UShadowSlaveStatusEffectComponent>())
+		{
+			CaptureStatusEffects(StatusComp, SaveObject->StatusEffectData);
+		}
 	}
 
 	if (World)
@@ -304,6 +311,15 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		if (UShadowSlaveEquipmentComponent* Equip = PlayerPawn->FindComponentByClass<UShadowSlaveEquipmentComponent>())
 		{
 			RestoreEquipment(Equip, SaveGame->EquipmentData);
+		}
+	}
+
+	// 7b. Status effects restoration (persistent effects restored to character)
+	if (PlayerPawn && SaveGame->StatusEffectData.bIsValid)
+	{
+		if (UShadowSlaveStatusEffectComponent* StatusComp = PlayerPawn->FindComponentByClass<UShadowSlaveStatusEffectComponent>())
+		{
+			RestoreStatusEffects(StatusComp, SaveGame->StatusEffectData);
 		}
 	}
 
@@ -773,6 +789,70 @@ void UShadowSlaveSaveSubsystem::RestoreEquipment(UShadowSlaveEquipmentComponent*
 	}
 }
 
+void UShadowSlaveSaveSubsystem::CaptureStatusEffects(UShadowSlaveStatusEffectComponent* EffectComp, FShadowSlaveStatusEffectCollectionSaveData& OutData)
+{
+	if (!EffectComp)
+	{
+		OutData.bIsValid = false;
+		return;
+	}
+
+	OutData.Effects.Empty();
+
+	for (const FShadowSlaveStatusEffectInstance& Effect : EffectComp->GetActiveEffects())
+	{
+		// Only capture effects explicitly marked as persisting across save/load
+		if (Effect.IsValid() && Effect.EffectDefinition && Effect.EffectDefinition->bPersistAcrossSaveLoad)
+		{
+			FShadowSlaveStatusEffectSaveData EffectSave;
+			EffectSave.InstanceId = Effect.InstanceId;
+			EffectSave.EffectId = Effect.EffectDefinition->EffectId;
+			EffectSave.EffectPrimaryAssetId = Effect.EffectDefinition->GetPrimaryAssetId();
+			EffectSave.CurrentStacks = Effect.CurrentStacks;
+			EffectSave.DynamicProperties = Effect.DynamicProperties;
+
+			OutData.Effects.Add(EffectSave);
+		}
+	}
+
+	OutData.bIsValid = true;
+}
+
+void UShadowSlaveSaveSubsystem::RestoreStatusEffects(UShadowSlaveStatusEffectComponent* EffectComp, const FShadowSlaveStatusEffectCollectionSaveData& InData)
+{
+	if (!EffectComp || !InData.bIsValid)
+	{
+		return;
+	}
+
+	TArray<FShadowSlaveStatusEffectInstance> RestoredEffects;
+	for (const FShadowSlaveStatusEffectSaveData& SavedEffect : InData.Effects)
+	{
+		UShadowSlaveStatusEffectDefinition* ResolvedDef = ResolveStatusEffectDefinition(SavedEffect.EffectId, SavedEffect.EffectPrimaryAssetId);
+		if (ResolvedDef)
+		{
+			FShadowSlaveStatusEffectInstance RestoredInst;
+			RestoredInst.InstanceId = SavedEffect.InstanceId;
+			RestoredInst.EffectDefinition = ResolvedDef;
+			RestoredInst.CurrentStacks = FMath::Max(1, SavedEffect.CurrentStacks);
+			RestoredInst.DynamicProperties = SavedEffect.DynamicProperties;
+
+			if (ResolvedDef->DurationPolicy == EStatusEffectDurationPolicy::Timed)
+			{
+				RestoredInst.TotalDuration = ResolvedDef->Duration;
+			}
+
+			RestoredEffects.Add(RestoredInst);
+		}
+		else
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("RestoreStatusEffects: could not resolve StatusEffect definition '%s'."), *SavedEffect.EffectId.ToString());
+		}
+	}
+
+	EffectComp->RestoreEffects(RestoredEffects);
+}
+
 void UShadowSlaveSaveSubsystem::CaptureWorldState(UWorld* World, FShadowSlaveWorldSaveData& OutData)
 {
 	if (!World)
@@ -1060,6 +1140,44 @@ UShadowSlaveFlawDefinition* UShadowSlaveSaveSubsystem::ResolveFlawDefinition(FNa
 	if (!FlawId.IsNone())
 	{
 		if (UShadowSlaveFlawDefinition* Found = FindObject<UShadowSlaveFlawDefinition>(ANY_PACKAGE, *FlawId.ToString()))
+		{
+			return Found;
+		}
+	}
+
+	return nullptr;
+}
+
+UShadowSlaveStatusEffectDefinition* UShadowSlaveSaveSubsystem::ResolveStatusEffectDefinition(FName EffectId, const FPrimaryAssetId& PrimaryAssetId) const
+{
+	// 1. Attempt Asset Manager resolution
+	if (PrimaryAssetId.IsValid() && UAssetManager::IsInitialized())
+	{
+		if (UObject* AssetObj = UAssetManager::Get().GetPrimaryAssetObject(PrimaryAssetId))
+		{
+			if (UShadowSlaveStatusEffectDefinition* Def = Cast<UShadowSlaveStatusEffectDefinition>(AssetObj))
+			{
+				return Def;
+			}
+		}
+
+		const FSoftObjectPath AssetPath = UAssetManager::Get().GetPrimaryAssetPath(PrimaryAssetId);
+		if (AssetPath.IsValid())
+		{
+			if (UObject* Loaded = AssetPath.TryLoad())
+			{
+				if (UShadowSlaveStatusEffectDefinition* Def = Cast<UShadowSlaveStatusEffectDefinition>(Loaded))
+				{
+					return Def;
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: find loaded object in memory
+	if (!EffectId.IsNone())
+	{
+		if (UShadowSlaveStatusEffectDefinition* Found = FindObject<UShadowSlaveStatusEffectDefinition>(ANY_PACKAGE, *EffectId.ToString()))
 		{
 			return Found;
 		}

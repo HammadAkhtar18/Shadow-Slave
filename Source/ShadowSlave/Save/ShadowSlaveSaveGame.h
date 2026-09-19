@@ -90,6 +90,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Equipment")
 	FShadowSlaveEquipmentSaveData EquipmentData;
 
+	/** Serialized snapshot of owned status effects with preserved GUIDs and stacks */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|StatusEffects")
+	FShadowSlaveStatusEffectCollectionSaveData StatusEffectData;
+
 	/** Serialized snapshot of opt-in persistent world objects */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|World")
 	FShadowSlaveWorldSaveData WorldData;

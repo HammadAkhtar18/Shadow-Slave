@@ -12,6 +12,7 @@
 class UShadowSlaveCombatComponent;
 class UShadowSlaveAttributeComponent;
 class UShadowSlaveEquipmentComponent;
+class UShadowSlaveStatusEffectComponent;
 
 class AShadowSlaveCharacterBase;
 
@@ -133,6 +134,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Equipment")
 	UShadowSlaveEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 
+	/** Returns the modular status effect component */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|StatusEffects")
+	UShadowSlaveStatusEffectComponent* GetStatusEffectComponent() const { return StatusEffectComponent; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -165,6 +170,10 @@ protected:
 	/** Modular Equipment Component managing items and Memories across equipment slots */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveEquipmentComponent> EquipmentComponent;
+
+	/** Modular Status Effect Component managing active conditions and timed/persistent effects */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|StatusEffects", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveStatusEffectComponent> StatusEffectComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Character")
 	bool bIsAlive = true;

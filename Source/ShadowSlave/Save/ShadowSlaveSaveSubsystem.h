@@ -17,11 +17,13 @@ class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
 class UShadowSlaveEchoComponent;
 class UShadowSlaveEquipmentComponent;
+class UShadowSlaveStatusEffectComponent;
 class UShadowSlaveMemoryDefinition;
 class UShadowSlaveEchoDefinition;
 class UShadowSlaveItemDefinition;
 class UShadowSlaveAspectDefinition;
 class UShadowSlaveFlawDefinition;
+class UShadowSlaveStatusEffectDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSaveGameCompletedSignature, bool, bSuccess, const FString&, SlotName);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLoadGameCompletedSignature, bool, bSuccess, const FString&, SlotName);
@@ -121,6 +123,9 @@ public:
 	void CaptureEquipment(UShadowSlaveEquipmentComponent* EquipComp, FShadowSlaveEquipmentSaveData& OutData);
 	void RestoreEquipment(UShadowSlaveEquipmentComponent* EquipComp, const FShadowSlaveEquipmentSaveData& InData);
 
+	void CaptureStatusEffects(UShadowSlaveStatusEffectComponent* EffectComp, FShadowSlaveStatusEffectCollectionSaveData& OutData);
+	void RestoreStatusEffects(UShadowSlaveStatusEffectComponent* EffectComp, const FShadowSlaveStatusEffectCollectionSaveData& InData);
+
 	void CaptureWorldState(UWorld* World, FShadowSlaveWorldSaveData& OutData);
 	void RestoreWorldState(UWorld* World, const FShadowSlaveWorldSaveData& InData);
 
@@ -131,6 +136,7 @@ public:
 	UShadowSlaveItemDefinition* ResolveItemDefinition(FName ItemDefinitionId, const FPrimaryAssetId& PrimaryAssetId) const;
 	UShadowSlaveAspectDefinition* ResolveAspectDefinition(FName AspectId, const FPrimaryAssetId& PrimaryAssetId) const;
 	UShadowSlaveFlawDefinition* ResolveFlawDefinition(FName FlawId, const FPrimaryAssetId& PrimaryAssetId) const;
+	UShadowSlaveStatusEffectDefinition* ResolveStatusEffectDefinition(FName EffectId, const FPrimaryAssetId& PrimaryAssetId) const;
 
 	/* --- Delegates --- */
 

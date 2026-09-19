@@ -4,6 +4,7 @@
 #include "Combat/ShadowSlaveCombatComponent.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
+#include "StatusEffects/ShadowSlaveStatusEffectComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionSystem.h"
@@ -36,6 +37,9 @@ AShadowSlaveCharacterBase::AShadowSlaveCharacterBase(const FObjectInitializer& O
 
 	// Create modular equipment component
 	EquipmentComponent = CreateDefaultSubobject<UShadowSlaveEquipmentComponent>(TEXT("EquipmentComponent"));
+
+	// Create modular status effect component
+	StatusEffectComponent = CreateDefaultSubobject<UShadowSlaveStatusEffectComponent>(TEXT("StatusEffectComponent"));
 }
 
 void AShadowSlaveCharacterBase::BeginPlay()

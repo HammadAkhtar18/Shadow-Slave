@@ -347,6 +347,56 @@ struct SHADOWSLAVE_API FShadowSlaveEquipmentSaveData
 };
 
 /**
+ * Serializable snapshot of an individual status effect instance.
+ * Preserves GUID, definition identity, stack count, and dynamic properties.
+ * Timers, delegates, and raw actor pointers are strictly transient and never saved.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveStatusEffectSaveData
+{
+	GENERATED_BODY()
+
+	/** Unique instance GUID preserved across save/load */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FGuid InstanceId;
+
+	/** Stable identifier of the Status Effect Definition */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FName EffectId = NAME_None;
+
+	/** Primary Asset ID of the Status Effect Definition */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FPrimaryAssetId EffectPrimaryAssetId;
+
+	/** Current stack count */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	int32 CurrentStacks = 1;
+
+	/** Instance-specific dynamic properties */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	TMap<FName, FString> DynamicProperties;
+
+	FShadowSlaveStatusEffectSaveData() = default;
+};
+
+/**
+ * Serializable snapshot of a status effect component collection.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveStatusEffectCollectionSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	TArray<FShadowSlaveStatusEffectSaveData> Effects;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	bool bIsValid = false;
+
+	FShadowSlaveStatusEffectCollectionSaveData() = default;
+};
+
+/**
  * Serializable record representing the persistent state of a world actor.
  */
 USTRUCT(BlueprintType)

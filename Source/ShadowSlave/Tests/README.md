@@ -12,6 +12,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, essence cost, destruction, and save/load
+├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load, and authority boundaries
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
 └── README.md                         # Documentation and discovery guide
 ```
@@ -25,6 +26,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Dialogue.*`
 - `ShadowSlave.Aspects.*`
 - `ShadowSlave.Echoes.*`
+- `ShadowSlave.StatusEffects.*`
 - `ShadowSlave.Gameplay.*`
 
 Test names are descriptive and describe specific invariant contracts (e.g. `ShadowSlave.Quest.MissingPrerequisitesFailClosed`, `ShadowSlave.Story.RestoreReconcilesActiveParentWithFailedEntry`).
