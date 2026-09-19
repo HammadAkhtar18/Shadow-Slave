@@ -48,6 +48,7 @@ namespace
 	};
 }
 
+// 1. Acquisition and Queries Test
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveEchoAcquisitionAndQueriesTest,
 	"ShadowSlave.Echoes.AcquisitionAndQueries",
@@ -105,6 +106,7 @@ bool FShadowSlaveEchoAcquisitionAndQueriesTest::RunTest(const FString& Parameter
 	return true;
 }
 
+// 2. Summon & Dismiss Lifecycle Baseline Test
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveEchoSummonLifecycleTest,
 	"ShadowSlave.Echoes.SummonAndDismissLifecycle",
@@ -131,8 +133,8 @@ bool FShadowSlaveEchoSummonLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Echo state must be Summoned"), State, EShadowSlaveEchoState::Summoned);
 	TestEqual(TEXT("GetSummonedEchoes must contain 1 echo"), Fixture.EchoComp->GetSummonedEchoes().Num(), 1);
 
-	// Idempotent summoning (repeated summon does not error or re-transition)
-	TestTrue(TEXT("Repeated SummonEcho must return true"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	// Duplicate summon rejected: the same Echo instance cannot have two simultaneous summoned representations
+	TestFalse(TEXT("Duplicate SummonEcho must be rejected"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
 	TestTrue(TEXT("Echo must remain summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
 
 	// Dismissal
@@ -142,7 +144,7 @@ bool FShadowSlaveEchoSummonLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Echo state must be Dormant"), State, EShadowSlaveEchoState::Dormant);
 	TestEqual(TEXT("GetSummonedEchoes must be empty"), Fixture.EchoComp->GetSummonedEchoes().Num(), 0);
 
-	// Idempotent dismissal
+	// Idempotent/repeated dismissal is harmless
 	TestTrue(TEXT("Repeated DismissEcho must return true"), Fixture.EchoComp->DismissEcho(Echo.InstanceId));
 	TestFalse(TEXT("Echo must remain dormant"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
 
@@ -154,6 +156,7 @@ bool FShadowSlaveEchoSummonLifecycleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 3. Essence Cost Validation Test
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveEchoEssenceCostTest,
 	"ShadowSlave.Echoes.EssenceCostValidation",
@@ -184,13 +187,14 @@ bool FShadowSlaveEchoEssenceCostTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Echo must now be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
 	TestNearlyEqual(TEXT("Essence must be consumed by summon cost (60 - 35 = 25)"), Fixture.Attributes->GetCurrentEssence(), 25.0f, 0.001f);
 
-	// Repeated summon is idempotent and must NOT double-charge essence
-	TestTrue(TEXT("Repeated summon must succeed"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	// Repeated duplicate summon is rejected and must NOT double-charge essence
+	TestFalse(TEXT("Repeated duplicate summon must be rejected"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
 	TestNearlyEqual(TEXT("Repeated summon must not consume essence again"), Fixture.Attributes->GetCurrentEssence(), 25.0f, 0.001f);
 
 	return true;
 }
 
+// 4. Destruction vs Removal Test
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveEchoDestructionVsRemovalTest,
 	"ShadowSlave.Echoes.DestructionVsRemoval",
@@ -236,6 +240,7 @@ bool FShadowSlaveEchoDestructionVsRemovalTest::RunTest(const FString& Parameters
 	return true;
 }
 
+// 5. Save/Load Roundtrip Test
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveEchoSaveLoadRoundtripTest,
 	"ShadowSlave.Echoes.SaveLoadSnapshotRestoration",
@@ -317,6 +322,347 @@ bool FShadowSlaveEchoSaveLoadRoundtripTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Restored Echo2 must be found"), Fixture.EchoComp->FindEcho(OriginalEcho2.InstanceId, RestoredEcho2));
 	TestEqual(TEXT("Restored Echo2 state must remain Destroyed"), RestoredEcho2.State, EShadowSlaveEchoState::Destroyed);
 	TestFalse(TEXT("Restored destroyed Echo CANNOT be summoned"), Fixture.EchoComp->SummonEcho(OriginalEcho2.InstanceId));
+
+	return true;
+}
+
+// 6. Required Test: Echo.OwnershipPersistsAcrossDismiss
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoOwnershipPersistsAcrossDismissTest,
+	"ShadowSlave.Echoes.OwnershipPersistsAcrossDismiss",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoOwnershipPersistsAcrossDismissTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho (Owned/Dormant)"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+	TestEqual(TEXT("Echo count must be 1"), Fixture.EchoComp->GetEchoCount(), 1);
+	TestEqual(TEXT("State must start Dormant"), Echo.State, EShadowSlaveEchoState::Dormant);
+	TestFalse(TEXT("bIsSummoned must start false"), Echo.bIsSummoned);
+
+	// Summon -> Summoned/Active
+	TestTrue(TEXT("SummonEcho must succeed"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("IsEchoSummoned must be true"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	TestTrue(TEXT("HasEchoByInstanceId must be true while summoned"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	// Dismiss -> Owned/Dormant
+	TestTrue(TEXT("DismissEcho must succeed"), Fixture.EchoComp->DismissEcho(Echo.InstanceId));
+	TestFalse(TEXT("IsEchoSummoned must be false after dismiss"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	EShadowSlaveEchoState State = EShadowSlaveEchoState::Summoned;
+	TestTrue(TEXT("GetEchoState must succeed"), Fixture.EchoComp->GetEchoState(Echo.InstanceId, State));
+	TestEqual(TEXT("State must return to Dormant"), State, EShadowSlaveEchoState::Dormant);
+
+	// Invariant: Echo is still owned and exists
+	TestEqual(TEXT("Echo count must still be 1 (ownership persists)"), Fixture.EchoComp->GetEchoCount(), 1);
+	TestTrue(TEXT("HasEcho must still return true"), Fixture.EchoComp->HasEcho(Fixture.EchoDef));
+	TestTrue(TEXT("HasEchoByInstanceId must still return true"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	// Persistent Echo remains available for a future summon
+	TestTrue(TEXT("Echo can be summoned again"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("Echo is summoned again"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	return true;
+}
+
+// 7. Required Test: Echo.DuplicateSummonRejected
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDuplicateSummonRejectedTest,
+	"ShadowSlave.Echoes.DuplicateSummonRejected",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDuplicateSummonRejectedTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+
+	// First summon succeeds
+	TestTrue(TEXT("First SummonEcho must succeed"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("Echo must be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	// Second summon must be rejected: cannot have two simultaneous representations
+	TestFalse(TEXT("Duplicate SummonEcho must be rejected"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("Echo must remain summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	TestEqual(TEXT("Echo count must remain 1"), Fixture.EchoComp->GetEchoCount(), 1);
+
+	return true;
+}
+
+// 8. Required Test: Echo.DismissWithoutActorSafe
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDismissWithoutActorSafeTest,
+	"ShadowSlave.Echoes.DismissWithoutActorSafe",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDismissWithoutActorSafeTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+
+	// Summoned without transient actor (pure logical summon)
+	TestTrue(TEXT("SummonEcho without actor succeeds"), Fixture.EchoComp->SummonEcho(Echo.InstanceId, nullptr));
+	TestNull(TEXT("GetSummonedActor must return null"), Fixture.EchoComp->GetSummonedActor(Echo.InstanceId));
+	TestTrue(TEXT("Echo is summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	// Dismissal without actor must be safe and not cause ownership loss
+	TestTrue(TEXT("DismissEcho must succeed even when transient actor is missing"), Fixture.EchoComp->DismissEcho(Echo.InstanceId));
+	TestFalse(TEXT("Echo must be dormant after dismissal"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	TestEqual(TEXT("Echo count must remain 1 (ownership not lost)"), Fixture.EchoComp->GetEchoCount(), 1);
+	TestTrue(TEXT("Echo remains owned by instance ID"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	// Repeated dismissal is harmless
+	TestTrue(TEXT("Repeated DismissEcho must be harmless and return true"), Fixture.EchoComp->DismissEcho(Echo.InstanceId));
+	TestEqual(TEXT("Echo count must still remain 1"), Fixture.EchoComp->GetEchoCount(), 1);
+
+	return true;
+}
+
+// 9. Required Test: Echo.DestroyedActorDoesNotDestroyOwnership
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDestroyedActorDoesNotDestroyOwnershipTest,
+	"ShadowSlave.Echoes.DestroyedActorDoesNotDestroyOwnership",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDestroyedActorDoesNotDestroyOwnershipTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+
+	// Create an actor representation using NewObject (safe in headless test fixture)
+	AActor* SpawnedPawn = NewObject<AShadowSlavePlayerCharacter>(Fixture.Player);
+	TestNotNull(TEXT("Spawned representation must be valid"), SpawnedPawn);
+
+	TestTrue(TEXT("SummonEcho with transient actor"), Fixture.EchoComp->SummonEcho(Echo.InstanceId, SpawnedPawn));
+	TestTrue(TEXT("Echo must be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	TestEqual(TEXT("GetSummonedActor must return spawned pawn"), Fixture.EchoComp->GetSummonedActor(Echo.InstanceId), SpawnedPawn);
+
+	// External destruction of the transient representation: invoke HandleSummonedActorDestroyed
+	Fixture.EchoComp->HandleSummonedActorDestroyed(SpawnedPawn);
+
+	// The Echo must transition to Dormant, clear the actor pointer, but REMAIN OWNED
+	TestFalse(TEXT("Echo must no longer be summoned after actor destruction"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+	EShadowSlaveEchoState State = EShadowSlaveEchoState::Summoned;
+	TestTrue(TEXT("GetEchoState must succeed"), Fixture.EchoComp->GetEchoState(Echo.InstanceId, State));
+	TestEqual(TEXT("State must transition safely to Dormant"), State, EShadowSlaveEchoState::Dormant);
+	TestNull(TEXT("Transient actor pointer must be cleared (no stale pointer)"), Fixture.EchoComp->GetSummonedActor(Echo.InstanceId));
+
+	// Invariant: Persistent Echo is NOT destroyed and remains owned
+	TestEqual(TEXT("Echo count must remain 1"), Fixture.EchoComp->GetEchoCount(), 1);
+	TestTrue(TEXT("Echo remains owned by instance ID"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	// Echo is recoverable and can be summoned again
+	TestTrue(TEXT("Echo can be summoned again after actor destruction"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("Echo is summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	return true;
+}
+
+// 10. Required Test: Echo.SaveLoadDoesNotRestoreTransientSummon
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoSaveLoadDoesNotRestoreTransientSummonTest,
+	"ShadowSlave.Echoes.SaveLoadDoesNotRestoreTransientSummon",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoSaveLoadDoesNotRestoreTransientSummonTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+
+	// Summon Echo
+	TestTrue(TEXT("SummonEcho"), Fixture.EchoComp->SummonEcho(Echo.InstanceId));
+	TestTrue(TEXT("Echo is summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	// Capture save data
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	FShadowSlaveEchoCollectionSaveData SaveData;
+	SaveSubsystem->CaptureEchoes(Fixture.EchoComp, SaveData);
+	TestTrue(TEXT("SaveData must be valid"), SaveData.bIsValid);
+	TestEqual(TEXT("One echo captured"), SaveData.Echoes.Num(), 1);
+
+	// Verify save data state is normalized to Dormant (transient summon is NEVER persisted)
+	TestEqual(TEXT("Saved state must be Dormant"), SaveData.Echoes[0].State, EShadowSlaveEchoState::Dormant);
+
+	// Restore into a fresh component
+	UShadowSlaveEchoComponent* RestoredComp = NewObject<UShadowSlaveEchoComponent>(Fixture.Player);
+	SaveSubsystem->RestoreEchoes(RestoredComp, SaveData);
+
+	// Restored Echo must be Dormant, not summoned, and have no transient actor
+	TestEqual(TEXT("Restored echo count must be 1"), RestoredComp->GetEchoCount(), 1);
+	TestFalse(TEXT("Restored Echo must NOT be summoned (no fake world summon)"), RestoredComp->IsEchoSummoned(Echo.InstanceId));
+	EShadowSlaveEchoState RestoredState = EShadowSlaveEchoState::Summoned;
+	TestTrue(TEXT("GetEchoState on restored echo"), RestoredComp->GetEchoState(Echo.InstanceId, RestoredState));
+	TestEqual(TEXT("Restored state must be Dormant"), RestoredState, EShadowSlaveEchoState::Dormant);
+	TestNull(TEXT("Restored transient actor must be null"), RestoredComp->GetSummonedActor(Echo.InstanceId));
+
+	return true;
+}
+
+// 11. Required Test: Echo.SaveLoadPreservesPersistentData
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoSaveLoadPreservesPersistentDataTest,
+	"ShadowSlave.Echoes.SaveLoadPreservesPersistentData",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoSaveLoadPreservesPersistentDataTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("AcquireEcho"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+	TestTrue(TEXT("Set DynamicProperty"), Fixture.EchoComp->SetEchoDynamicProperty(Echo.InstanceId, FName(TEXT("CustomName")), TEXT("ShadowHound")));
+
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	FShadowSlaveEchoCollectionSaveData SaveData;
+	SaveSubsystem->CaptureEchoes(Fixture.EchoComp, SaveData);
+
+	UShadowSlaveEchoComponent* RestoredComp = NewObject<UShadowSlaveEchoComponent>(Fixture.Player);
+	SaveSubsystem->RestoreEchoes(RestoredComp, SaveData);
+
+	// Verify Instance GUID survives
+	TestTrue(TEXT("Restored component has echo by original GUID"), RestoredComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	// Verify Definition identity survives
+	FShadowSlaveEchoInstance RestoredInstance;
+	TestTrue(TEXT("FindEcho on restored component"), RestoredComp->FindEcho(Echo.InstanceId, RestoredInstance));
+	TestNotNull(TEXT("Definition must be resolved"), RestoredInstance.EchoDefinition.Get());
+	if (RestoredInstance.EchoDefinition)
+	{
+		TestEqual(TEXT("Definition EchoId must match"), RestoredInstance.EchoDefinition->EchoId, Fixture.EchoDef->EchoId);
+	}
+
+	// Verify Dynamic properties survive
+	FString RestoredVal;
+	TestTrue(TEXT("GetDynamicProperty on restored echo"), RestoredComp->GetEchoDynamicProperty(Echo.InstanceId, FName(TEXT("CustomName")), RestoredVal));
+	TestEqual(TEXT("DynamicProperty value must match"), RestoredVal, TEXT("ShadowHound"));
+
+	return true;
+}
+
+// 12. Required Test: Echo.ReentrancyDuringSummonRejected
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoReentrancyDuringSummonRejectedTest,
+	"ShadowSlave.Echoes.ReentrancyDuringSummonRejected",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoReentrancyDuringSummonRejectedTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo1;
+	FShadowSlaveEchoInstance Echo2;
+	TestTrue(TEXT("Acquire Echo1"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo1));
+	TestTrue(TEXT("Acquire Echo2"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo2));
+
+	bool bCallbackFired = false;
+	bool bReentrantSummonResult = true;
+	bool bReentrantRemoveResult = true;
+
+	// Case A & C: OnEchoSummoned callback attempts another summon and a removal
+	FDelegateHandle Handle = Fixture.EchoComp->OnEchoSummoned.AddLambda(
+		[&](const FShadowSlaveEchoInstance& SummonedEcho)
+		{
+			bCallbackFired = true;
+			// Case A: Attempt another summon while transition is active -> must be rejected
+			bReentrantSummonResult = Fixture.EchoComp->SummonEcho(Echo2.InstanceId);
+			// Case C: Attempt removal while transition is active -> must be rejected
+			bReentrantRemoveResult = Fixture.EchoComp->RemoveEcho(Echo2.InstanceId);
+		}
+	);
+
+	const bool Summon1Result = Fixture.EchoComp->SummonEcho(Echo1.InstanceId);
+	TestTrue(TEXT("SummonEcho on Echo1 must succeed"), Summon1Result);
+	TestTrue(TEXT("OnEchoSummoned callback must have fired"), bCallbackFired);
+	TestFalse(TEXT("Reentrant SummonEcho during transition must be rejected"), bReentrantSummonResult);
+	TestFalse(TEXT("Reentrant RemoveEcho during transition must be rejected"), bReentrantRemoveResult);
+
+	// Echo2 must NOT be summoned and must still exist in collection
+	TestFalse(TEXT("Echo2 must not be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo2.InstanceId));
+	TestEqual(TEXT("Echo count must remain 2"), Fixture.EchoComp->GetEchoCount(), 2);
+
+	Fixture.EchoComp->OnEchoSummoned.Remove(Handle);
+
+	// After transition finishes, normal operations succeed
+	TestTrue(TEXT("Post-transition SummonEcho on Echo2 must succeed"), Fixture.EchoComp->SummonEcho(Echo2.InstanceId));
+	TestTrue(TEXT("Echo2 is summoned"), Fixture.EchoComp->IsEchoSummoned(Echo2.InstanceId));
+
+	return true;
+}
+
+// 13. Required Test: Echo.ReentrancyDuringDismissRejected
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoReentrancyDuringDismissRejectedTest,
+	"ShadowSlave.Echoes.ReentrancyDuringDismissRejected",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoReentrancyDuringDismissRejectedTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo1;
+	FShadowSlaveEchoInstance Echo2;
+	TestTrue(TEXT("Acquire Echo1"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo1));
+	TestTrue(TEXT("Acquire Echo2"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo2));
+	TestTrue(TEXT("Summon Echo1"), Fixture.EchoComp->SummonEcho(Echo1.InstanceId));
+	TestTrue(TEXT("Summon Echo2"), Fixture.EchoComp->SummonEcho(Echo2.InstanceId));
+
+	bool bCallbackFired = false;
+	bool bReentrantDismissResult = true;
+	bool bReentrantDestroyResult = true;
+
+	// Case B & C: OnEchoDismissed callback attempts another dismiss and destruction
+	FDelegateHandle Handle = Fixture.EchoComp->OnEchoDismissed.AddLambda(
+		[&](const FShadowSlaveEchoInstance& DismissedEcho)
+		{
+			bCallbackFired = true;
+			// Case B: Attempt another dismiss while transition is active -> must be rejected
+			bReentrantDismissResult = Fixture.EchoComp->DismissEcho(Echo2.InstanceId);
+			// Case C: Attempt destruction while transition is active -> must be rejected
+			bReentrantDestroyResult = Fixture.EchoComp->DestroyEcho(Echo2.InstanceId);
+		}
+	);
+
+	const bool Dismiss1Result = Fixture.EchoComp->DismissEcho(Echo1.InstanceId);
+	TestTrue(TEXT("DismissEcho on Echo1 must succeed"), Dismiss1Result);
+	TestTrue(TEXT("OnEchoDismissed callback must have fired"), bCallbackFired);
+	TestFalse(TEXT("Reentrant DismissEcho during transition must be rejected"), bReentrantDismissResult);
+	TestFalse(TEXT("Reentrant DestroyEcho during transition must be rejected"), bReentrantDestroyResult);
+
+	// Echo2 must still be summoned and not destroyed
+	TestTrue(TEXT("Echo2 must still be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo2.InstanceId));
+	EShadowSlaveEchoState State2 = EShadowSlaveEchoState::Dormant;
+	TestTrue(TEXT("GetEchoState on Echo2"), Fixture.EchoComp->GetEchoState(Echo2.InstanceId, State2));
+	TestEqual(TEXT("Echo2 state must still be Summoned"), State2, EShadowSlaveEchoState::Summoned);
+
+	Fixture.EchoComp->OnEchoDismissed.Remove(Handle);
+
+	// After transition finishes, normal operations succeed
+	TestTrue(TEXT("Post-transition DismissEcho on Echo2 must succeed"), Fixture.EchoComp->DismissEcho(Echo2.InstanceId));
+	TestFalse(TEXT("Echo2 is now dormant"), Fixture.EchoComp->IsEchoSummoned(Echo2.InstanceId));
 
 	return true;
 }

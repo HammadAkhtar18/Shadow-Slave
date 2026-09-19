@@ -6,6 +6,7 @@
 #include "ShadowSlaveEchoTypes.generated.h"
 
 class UShadowSlaveEchoDefinition;
+class AActor;
 
 /**
  * Canon Echo Rank representing the power rank of the Echo.
@@ -83,6 +84,14 @@ struct SHADOWSLAVE_API FShadowSlaveEchoInstance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Echoes")
 	bool bIsSummoned = false;
 
+	/**
+	 * Transient weak reference to the active world representation actor (if present).
+	 * Strictly transient: NEVER serialized, never participates in save/load.
+	 * If the actor is destroyed externally, this weak pointer safely becomes null.
+	 */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> TransientActor = nullptr;
+
 	/** Optional instance-specific dynamic properties for save-game, modifications, and future state support */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Echoes")
 	TMap<FName, FString> DynamicProperties;
@@ -90,7 +99,7 @@ struct SHADOWSLAVE_API FShadowSlaveEchoInstance
 	FShadowSlaveEchoInstance() = default;
 
 	FShadowSlaveEchoInstance(UShadowSlaveEchoDefinition* InDef)
-		: InstanceId(FGuid::NewGuid()), EchoDefinition(InDef), State(EShadowSlaveEchoState::Dormant), bIsSummoned(false)
+		: InstanceId(FGuid::NewGuid()), EchoDefinition(InDef), State(EShadowSlaveEchoState::Dormant), bIsSummoned(false), TransientActor(nullptr)
 	{
 	}
 

@@ -12,10 +12,12 @@ UShadowSlaveEchoComponent::UShadowSlaveEchoComponent()
 
 bool UShadowSlaveEchoComponent::AcquireEcho(UShadowSlaveEchoDefinition* EchoDef, FShadowSlaveEchoInstance& OutInstance)
 {
-	if (!EchoDef)
+	if (bIsProcessingEchoTransition || !EchoDef)
 	{
 		return false;
 	}
+
+	TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
 	FShadowSlaveEchoInstance NewInstance(EchoDef);
 	Echoes.Add(NewInstance);
@@ -47,7 +49,7 @@ bool UShadowSlaveEchoComponent::AddEchoSimple(UShadowSlaveEchoDefinition* EchoDe
 
 bool UShadowSlaveEchoComponent::AddEchoInstance(const FShadowSlaveEchoInstance& InInstance)
 {
-	if (!InInstance.IsValid())
+	if (bIsProcessingEchoTransition || !InInstance.IsValid())
 	{
 		return false;
 	}
@@ -57,6 +59,8 @@ bool UShadowSlaveEchoComponent::AddEchoInstance(const FShadowSlaveEchoInstance& 
 		return false;
 	}
 
+	TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
 	Echoes.Add(InInstance);
 	OnEchoAdded.Broadcast(InInstance);
 	OnEchoCollectionChanged.Broadcast();
@@ -65,7 +69,7 @@ bool UShadowSlaveEchoComponent::AddEchoInstance(const FShadowSlaveEchoInstance& 
 
 bool UShadowSlaveEchoComponent::RemoveEcho(const FGuid& InstanceId)
 {
-	if (!InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -78,6 +82,8 @@ bool UShadowSlaveEchoComponent::RemoveEcho(const FGuid& InstanceId)
 			{
 				DismissEcho(InstanceId);
 			}
+
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
 			FShadowSlaveEchoInstance RemovedInstance = Echoes[Index];
 			Echoes.RemoveAt(Index);
@@ -127,6 +133,18 @@ bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 
 			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
+			// Clean up transient world actor if present
+			if (Echoes[Index].TransientActor.IsValid())
+			{
+				AActor* ActorToDestroy = Echoes[Index].TransientActor.Get();
+				Echoes[Index].TransientActor = nullptr;
+				if (ActorToDestroy)
+				{
+					ActorToDestroy->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+					ActorToDestroy->Destroy();
+				}
+			}
+
 			// Auto-dismiss if currently summoned so no stale summon state remains
 			if (Echoes[Index].bIsSummoned)
 			{
@@ -157,6 +175,16 @@ void UShadowSlaveEchoComponent::ClearEchoes()
 
 	for (FShadowSlaveEchoInstance& Echo : Echoes)
 	{
+		if (Echo.TransientActor.IsValid())
+		{
+			AActor* ActorToDestroy = Echo.TransientActor.Get();
+			Echo.TransientActor = nullptr;
+			if (ActorToDestroy)
+			{
+				ActorToDestroy->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+				ActorToDestroy->Destroy();
+			}
+		}
 		if (Echo.bIsSummoned)
 		{
 			Echo.bIsSummoned = false;
@@ -171,6 +199,27 @@ void UShadowSlaveEchoComponent::ClearEchoes()
 
 void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInstance>& InInstances)
 {
+	if (bIsProcessingEchoTransition)
+	{
+		return;
+	}
+
+	TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
+	// Clean up any existing transient world actors before restoring
+	for (FShadowSlaveEchoInstance& Echo : Echoes)
+	{
+		if (Echo.TransientActor.IsValid())
+		{
+			AActor* ActorToDestroy = Echo.TransientActor.Get();
+			Echo.TransientActor = nullptr;
+			if (ActorToDestroy)
+			{
+				ActorToDestroy->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+				ActorToDestroy->Destroy();
+			}
+		}
+	}
 	Echoes.Empty();
 
 	for (const FShadowSlaveEchoInstance& Instance : InInstances)
@@ -180,6 +229,7 @@ void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInsta
 			FShadowSlaveEchoInstance RestoredInstance = Instance;
 			// INVARIANT: Transient world summon state is NEVER restored from disk.
 			RestoredInstance.bIsSummoned = false;
+			RestoredInstance.TransientActor = nullptr;
 			if (RestoredInstance.State == EShadowSlaveEchoState::Summoned)
 			{
 				RestoredInstance.State = EShadowSlaveEchoState::Dormant;
@@ -191,7 +241,7 @@ void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInsta
 	OnEchoCollectionChanged.Broadcast();
 }
 
-bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId)
+bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId, AActor* InTransientActor)
 {
 	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
 	{
@@ -208,10 +258,22 @@ bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId)
 				return false;
 			}
 
-			// Idempotent: already summoned
+			// Duplicate summon rejected: the same Echo instance cannot have two simultaneous summoned representations.
 			if (Echoes[Index].bIsSummoned)
 			{
-				return true;
+				return false;
+			}
+
+			// If a transient actor representation is provided, verify it is not already used by another Echo
+			if (InTransientActor)
+			{
+				for (const FShadowSlaveEchoInstance& OtherEcho : Echoes)
+				{
+					if (OtherEcho.InstanceId != InstanceId && OtherEcho.TransientActor.Get() == InTransientActor)
+					{
+						return false;
+					}
+				}
 			}
 
 			// Validate and consume essence if configured on definition
@@ -236,6 +298,12 @@ bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId)
 			}
 
 			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
+			if (InTransientActor)
+			{
+				InTransientActor->OnDestroyed.AddDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+				Echoes[Index].TransientActor = InTransientActor;
+			}
 
 			const EShadowSlaveEchoState OldState = Echoes[Index].State;
 			Echoes[Index].bIsSummoned = true;
@@ -263,10 +331,23 @@ bool UShadowSlaveEchoComponent::DismissEcho(const FGuid& InstanceId)
 		{
 			if (!Echoes[Index].bIsSummoned)
 			{
+				// Repeated dismissal is harmless
 				return true;
 			}
 
 			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
+			// Destroy and unbind transient actor if present
+			if (Echoes[Index].TransientActor.IsValid())
+			{
+				AActor* ActorToDestroy = Echoes[Index].TransientActor.Get();
+				Echoes[Index].TransientActor = nullptr;
+				if (ActorToDestroy)
+				{
+					ActorToDestroy->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+					ActorToDestroy->Destroy();
+				}
+			}
 
 			const EShadowSlaveEchoState OldState = Echoes[Index].State;
 			Echoes[Index].bIsSummoned = false;
@@ -283,6 +364,11 @@ bool UShadowSlaveEchoComponent::DismissEcho(const FGuid& InstanceId)
 
 bool UShadowSlaveEchoComponent::DismissAllEchoes()
 {
+	if (bIsProcessingEchoTransition)
+	{
+		return false;
+	}
+
 	bool bAnyFailed = false;
 	for (const FShadowSlaveEchoInstance& Echo : Echoes)
 	{
@@ -298,9 +384,96 @@ bool UShadowSlaveEchoComponent::DismissAllEchoes()
 	return !bAnyFailed;
 }
 
-bool UShadowSlaveEchoComponent::SetEchoState(const FGuid& InstanceId, EShadowSlaveEchoState NewState)
+bool UShadowSlaveEchoComponent::SetSummonedActor(const FGuid& InstanceId, AActor* InTransientActor)
+{
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || !InTransientActor)
+	{
+		return false;
+	}
+
+	// Verify actor is not already registered to another Echo
+	for (const FShadowSlaveEchoInstance& OtherEcho : Echoes)
+	{
+		if (OtherEcho.InstanceId != InstanceId && OtherEcho.TransientActor.Get() == InTransientActor)
+		{
+			return false;
+		}
+	}
+
+	for (int32 Index = 0; Index < Echoes.Num(); ++Index)
+	{
+		if (Echoes[Index].InstanceId == InstanceId)
+		{
+			if (!Echoes[Index].bIsSummoned)
+			{
+				return false; // Cannot bind actor to dormant Echo
+			}
+
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
+			// Unbind from prior actor if different
+			if (Echoes[Index].TransientActor.IsValid() && Echoes[Index].TransientActor.Get() != InTransientActor)
+			{
+				Echoes[Index].TransientActor->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+			}
+
+			InTransientActor->OnDestroyed.AddDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+			Echoes[Index].TransientActor = InTransientActor;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+AActor* UShadowSlaveEchoComponent::GetSummonedActor(const FGuid& InstanceId) const
 {
 	if (!InstanceId.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (const FShadowSlaveEchoInstance& Echo : Echoes)
+	{
+		if (Echo.InstanceId == InstanceId)
+		{
+			return Echo.bIsSummoned ? Echo.TransientActor.Get() : nullptr;
+		}
+	}
+
+	return nullptr;
+}
+
+void UShadowSlaveEchoComponent::HandleSummonedActorDestroyed(AActor* DestroyedActor)
+{
+	if (!DestroyedActor || bIsProcessingEchoTransition)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Echoes.Num(); ++Index)
+		if (Echoes[Index].TransientActor.Get() == DestroyedActor)
+		{
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
+			Echoes[Index].TransientActor = nullptr;
+
+			if (Echoes[Index].bIsSummoned)
+			{
+				const EShadowSlaveEchoState OldState = Echoes[Index].State;
+				Echoes[Index].bIsSummoned = false;
+				Echoes[Index].State = EShadowSlaveEchoState::Dormant;
+
+				OnEchoDismissed.Broadcast(Echoes[Index]);
+				OnEchoStateChanged.Broadcast(Echoes[Index], OldState);
+			}
+			return;
+		}
+}
+
+bool UShadowSlaveEchoComponent::SetEchoState(const FGuid& InstanceId, EShadowSlaveEchoState NewState)
+{
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -313,6 +486,8 @@ bool UShadowSlaveEchoComponent::SetEchoState(const FGuid& InstanceId, EShadowSla
 			{
 				return true;
 			}
+
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
 			const EShadowSlaveEchoState OldState = Echoes[Index].State;
 			Echoes[Index].State = NewState;
@@ -343,7 +518,7 @@ bool UShadowSlaveEchoComponent::GetEchoState(const FGuid& InstanceId, EShadowSla
 
 bool UShadowSlaveEchoComponent::SetEchoDynamicProperty(const FGuid& InstanceId, FName Key, const FString& Value)
 {
-	if (!InstanceId.IsValid() || Key.IsNone())
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || Key.IsNone())
 	{
 		return false;
 	}
@@ -352,6 +527,8 @@ bool UShadowSlaveEchoComponent::SetEchoDynamicProperty(const FGuid& InstanceId, 
 	{
 		if (Echoes[Index].InstanceId == InstanceId)
 		{
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
 			Echoes[Index].DynamicProperties.Add(Key, Value);
 			OnEchoModified.Broadcast(Echoes[Index]);
 			return true;
@@ -386,7 +563,7 @@ bool UShadowSlaveEchoComponent::GetEchoDynamicProperty(const FGuid& InstanceId, 
 
 bool UShadowSlaveEchoComponent::RemoveEchoDynamicProperty(const FGuid& InstanceId, FName Key)
 {
-	if (!InstanceId.IsValid() || Key.IsNone())
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || Key.IsNone())
 	{
 		return false;
 	}
@@ -395,6 +572,8 @@ bool UShadowSlaveEchoComponent::RemoveEchoDynamicProperty(const FGuid& InstanceI
 	{
 		if (Echoes[Index].InstanceId == InstanceId)
 		{
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
 			if (Echoes[Index].DynamicProperties.Remove(Key) > 0)
 			{
 				OnEchoModified.Broadcast(Echoes[Index]);
@@ -548,4 +727,28 @@ TArray<FShadowSlaveEchoInstance> UShadowSlaveEchoComponent::GetEchoesByClass(ESh
 	}
 
 	return Filtered;
+}
+
+void UShadowSlaveEchoComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	for (FShadowSlaveEchoInstance& Echo : Echoes)
+	{
+		if (Echo.TransientActor.IsValid())
+		{
+			AActor* ActorToDestroy = Echo.TransientActor.Get();
+			Echo.TransientActor = nullptr;
+			if (ActorToDestroy)
+			{
+				ActorToDestroy->OnDestroyed.RemoveDynamic(this, &UShadowSlaveEchoComponent::HandleSummonedActorDestroyed);
+				ActorToDestroy->Destroy();
+			}
+		}
+		Echo.bIsSummoned = false;
+		if (Echo.State == EShadowSlaveEchoState::Summoned)
+		{
+			Echo.State = EShadowSlaveEchoState::Dormant;
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
 }

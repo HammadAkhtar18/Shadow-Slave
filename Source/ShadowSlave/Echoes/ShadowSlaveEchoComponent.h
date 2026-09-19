@@ -14,9 +14,25 @@ class UShadowSlaveAttributeComponent;
  * Reusable Actor Component managing an actor's authoritative Echo collection, manifestation/summoned state, and lifecycle.
  * Designed purely event-driven without tick overhead.
  *
- * NOTE ON AUTHORITY:
+ * NOTE ON AUTHORITY & LIFECYCLE:
  * This component is the sole authority for Echo ownership, instance GUIDs, and summoned status.
  * Resource costs (such as Essence consumption upon summoning) are delegated to UShadowSlaveAttributeComponent.
+ *
+ * LIFECYCLE INVARIANT:
+ * The persistent Echo collection represents owned Echoes:
+ * Owned/Dormant <-> Summoned/Active.
+ * A summoned pawn/actor is only a transient world representation.
+ * Losing or externally destroying a summoned world actor must NEVER destroy persistent Echo ownership.
+ *
+ * REENTRANCY CONTRACT:
+ * Mutation operations (AcquireEcho, AddEcho, AddEchoInstance, RemoveEcho, RemoveEchoByDefinition,
+ * DestroyEcho, ClearEchoes, RestoreEchoes, SummonEcho, DismissEcho, DismissAllEchoes,
+ * SetEchoState, SetEchoDynamicProperty, RemoveEchoDynamicProperty, SetSummonedActor)
+ * are protected by bIsProcessingEchoTransition. If any of these is called while a transition
+ * is already in progress (e.g. from within an OnEchoAdded, OnEchoRemoved, OnEchoDestroyed,
+ * OnEchoSummoned, OnEchoDismissed, OnEchoModified, OnEchoStateChanged, or OnEchoCollectionChanged callback),
+ * the nested call is rejected safely (returning false, invalid GUID, or no-op).
+ * This prevents iterator invalidation of the Echoes collection and recursive state corruption.
  */
 UCLASS(ClassGroup = (ShadowSlave), meta = (BlueprintSpawnableComponent))
 class SHADOWSLAVE_API UShadowSlaveEchoComponent : public UActorComponent
@@ -102,13 +118,18 @@ public:
 	/**
 	 * Manifests/summons an Echo into reality.
 	 * Validates essence availability via UShadowSlaveAttributeComponent if a summon essence cost is configured.
-	 * Returns true if successfully summoned (or already summoned).
+	 * Optionally associates a transient spawned world actor representation.
+	 * Rejects duplicate summon: the same Echo instance cannot have two simultaneous summoned representations.
+	 * Returns true if successfully summoned; returns false if already summoned, destroyed, not owned, or reentrant.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
-	bool SummonEcho(const FGuid& InstanceId);
+	bool SummonEcho(const FGuid& InstanceId, AActor* InTransientActor = nullptr);
 
 	/**
 	 * Dismisses/recalls a summoned Echo back into dormant soul storage.
+	 * Destroys any associated transient world actor.
+	 * Missing transient actor does not cause ownership loss.
+	 * Repeated dismissal is harmless.
 	 * Returns true if successfully dismissed (or already dormant).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
@@ -120,6 +141,27 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
 	bool DismissAllEchoes();
+
+	/**
+	 * Associates an existing transient world actor representation with an already summoned Echo.
+	 * Returns true if successfully set; returns false if Echo is not summoned, actor is invalid,
+	 * actor is already associated with another Echo, or reentrant.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
+	bool SetSummonedActor(const FGuid& InstanceId, AActor* InTransientActor);
+
+	/**
+	 * Retrieves the transient world representation actor for a summoned Echo, or nullptr if none/not summoned.
+	 */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Echoes|Queries")
+	AActor* GetSummonedActor(const FGuid& InstanceId) const;
+
+	/**
+	 * Callback invoked when a summoned Echo's transient world actor is destroyed externally.
+	 * Transitions the Echo safely back to Dormant without losing ownership.
+	 */
+	UFUNCTION()
+	void HandleSummonedActorDestroyed(AActor* DestroyedActor);
 
 	/* --- Runtime State --- */
 
@@ -223,11 +265,18 @@ public:
 	FOnEchoCollectionChangedSignature OnEchoCollectionChanged;
 
 protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	/** Collection of runtime Echo instances owned authoritatively by this component */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Echoes|State")
 	TArray<FShadowSlaveEchoInstance> Echoes;
 
 private:
-	/** Re-entrancy guard preventing recursive transitions during delegate broadcasts */
+	/**
+	 * Re-entrancy guard flag. Set to true during any active mutation or lifecycle transition.
+	 * While true, any nested mutation calls are rejected safely (returning false, invalid GUID, or no-op)
+	 * to prevent collection invalidation and recursive state corruption.
+	 * See the REENTRANCY CONTRACT in the class docstring above.
+	 */
 	bool bIsProcessingEchoTransition = false;
 };
