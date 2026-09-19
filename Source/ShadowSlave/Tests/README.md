@@ -13,6 +13,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, and teardown safety
 ├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, and expired-effect-not-restored verification
+├── ShadowSlaveGameplayTagTests.cpp   # Generic Gameplay Tag container queries, mutation helpers, hierarchical matching, and decoupled architecture
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
 └── README.md                         # Documentation and discovery guide
 ```
@@ -27,6 +28,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Aspects.*`
 - `ShadowSlave.Echoes.*`
 - `ShadowSlave.StatusEffects.*`
+- `ShadowSlave.GameplayTags.*`
 - `ShadowSlave.Gameplay.*`
 
 Test names are descriptive and describe specific invariant contracts (e.g. `ShadowSlave.Quest.MissingPrerequisitesFailClosed`, `ShadowSlave.Story.RestoreReconcilesActiveParentWithFailedEntry`).

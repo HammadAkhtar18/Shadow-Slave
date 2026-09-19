@@ -25,7 +25,8 @@ public class ShadowSlave : ModuleRules
 				"NavigationSystem",
 				"UMG",
 				"Slate",
-				"SlateCore"
+				"SlateCore",
+				"GameplayTags"
 			}
 		);
 
