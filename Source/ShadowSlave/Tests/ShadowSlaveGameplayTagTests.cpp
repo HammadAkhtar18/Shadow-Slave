@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "GameplayTagContainer.h"
 #include "Core/ShadowSlaveGameplayTagTypes.h"
 
 // 1. EmptyContainer Test
@@ -21,7 +22,7 @@ bool FShadowSlaveGameplayTagsEmptyContainerTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("New container tag count must be 0"), Container.Num(), 0);
 	TestFalse(TEXT("Empty container must not have State tag"), Container.HasTag(ShadowSlaveGameplayTags::State));
 	TestFalse(TEXT("Empty container must not have State_Active tag"), Container.HasTag(ShadowSlaveGameplayTags::State_Active));
-	TestFalse(TEXT("Empty container must not match via Library helper"), UShadowSlaveGameplayTagLibrary::HasTag(Container, ShadowSlaveGameplayTags::State_Active));
+	TestFalse(TEXT("Empty container must not have State_Active exact tag"), Container.HasTagExact(ShadowSlaveGameplayTags::State_Active));
 
 	return true;
 }
@@ -38,22 +39,25 @@ bool FShadowSlaveGameplayTagsAddRemoveTest::RunTest(const FString& Parameters)
 	FGameplayTagContainer Container;
 
 	// AddTag -> HasTag == true
-	TestTrue(TEXT("AddTag must succeed for valid tag"), UShadowSlaveGameplayTagLibrary::AddTag(Container, ShadowSlaveGameplayTags::State_Active));
+	Container.AddTag(ShadowSlaveGameplayTags::State_Active);
 	TestEqual(TEXT("Container must have 1 tag"), Container.Num(), 1);
-	TestTrue(TEXT("HasTag must return true after AddTag"), UShadowSlaveGameplayTagLibrary::HasTag(Container, ShadowSlaveGameplayTags::State_Active, true));
-	TestTrue(TEXT("Native container HasTagExact must return true"), Container.HasTagExact(ShadowSlaveGameplayTags::State_Active));
+	TestTrue(TEXT("HasTagExact must return true after AddTag"), Container.HasTagExact(ShadowSlaveGameplayTags::State_Active));
+	TestTrue(TEXT("HasTag must return true after AddTag"), Container.HasTag(ShadowSlaveGameplayTags::State_Active));
 
-	// Duplicate AddTag returns false
-	TestFalse(TEXT("Duplicate AddTag must return false"), UShadowSlaveGameplayTagLibrary::AddTag(Container, ShadowSlaveGameplayTags::State_Active));
+	// Duplicate AddTag does not duplicate tag in native FGameplayTagContainer
+	Container.AddTag(ShadowSlaveGameplayTags::State_Active);
 	TestEqual(TEXT("Container count must remain 1 after duplicate AddTag"), Container.Num(), 1);
 
 	// RemoveTag -> HasTag == false
-	TestTrue(TEXT("RemoveTag must succeed for existing tag"), UShadowSlaveGameplayTagLibrary::RemoveTag(Container, ShadowSlaveGameplayTags::State_Active));
+	const bool bRemoved = Container.RemoveTag(ShadowSlaveGameplayTags::State_Active);
+	TestTrue(TEXT("RemoveTag must succeed for existing tag"), bRemoved);
 	TestEqual(TEXT("Container must be empty after RemoveTag"), Container.Num(), 0);
-	TestFalse(TEXT("HasTag must return false after RemoveTag"), UShadowSlaveGameplayTagLibrary::HasTag(Container, ShadowSlaveGameplayTags::State_Active, true));
+	TestFalse(TEXT("HasTagExact must return false after RemoveTag"), Container.HasTagExact(ShadowSlaveGameplayTags::State_Active));
+	TestFalse(TEXT("HasTag must return false after RemoveTag"), Container.HasTag(ShadowSlaveGameplayTags::State_Active));
 
 	// Repeated RemoveTag returns false
-	TestFalse(TEXT("Repeated RemoveTag must return false"), UShadowSlaveGameplayTagLibrary::RemoveTag(Container, ShadowSlaveGameplayTags::State_Active));
+	const bool bRepeatedRemoved = Container.RemoveTag(ShadowSlaveGameplayTags::State_Active);
+	TestFalse(TEXT("Repeated RemoveTag must return false"), bRepeatedRemoved);
 
 	return true;
 }
@@ -75,17 +79,17 @@ bool FShadowSlaveGameplayTagsHasAnyTest::RunTest(const FString& Parameters)
 	FGameplayTagContainer OverlappingQuery;
 	OverlappingQuery.AddTag(ShadowSlaveGameplayTags::State_Active);
 	OverlappingQuery.AddTag(ShadowSlaveGameplayTags::Ability_Action);
-	TestTrue(TEXT("HasAny must return true when at least one tag overlaps"), UShadowSlaveGameplayTagLibrary::HasAny(Container, OverlappingQuery));
+	TestTrue(TEXT("HasAny must return true when at least one tag overlaps"), Container.HasAny(OverlappingQuery));
 
 	// Query containing disjoint tags
 	FGameplayTagContainer DisjointQuery;
 	DisjointQuery.AddTag(ShadowSlaveGameplayTags::Ability_Action);
 	DisjointQuery.AddTag(ShadowSlaveGameplayTags::State_Disabled);
-	TestFalse(TEXT("HasAny must return false when no tags overlap"), UShadowSlaveGameplayTagLibrary::HasAny(Container, DisjointQuery));
+	TestFalse(TEXT("HasAny must return false when no tags overlap"), Container.HasAny(DisjointQuery));
 
 	// Empty query
 	FGameplayTagContainer EmptyQuery;
-	TestFalse(TEXT("HasAny against empty query must return false"), UShadowSlaveGameplayTagLibrary::HasAny(Container, EmptyQuery));
+	TestFalse(TEXT("HasAny against empty query must return false"), Container.HasAny(EmptyQuery));
 
 	return true;
 }
@@ -107,18 +111,18 @@ bool FShadowSlaveGameplayTagsHasAllTest::RunTest(const FString& Parameters)
 	FGameplayTagContainer ExactSubset;
 	ExactSubset.AddTag(ShadowSlaveGameplayTags::State_Active);
 	ExactSubset.AddTag(ShadowSlaveGameplayTags::Combat_Engaged);
-	TestTrue(TEXT("HasAll must return true for exact subset"), UShadowSlaveGameplayTagLibrary::HasAll(Container, ExactSubset));
+	TestTrue(TEXT("HasAll must return true for exact subset"), Container.HasAll(ExactSubset));
 
 	// Query with partial overlap but missing 1 tag
 	FGameplayTagContainer SupersetQuery;
 	SupersetQuery.AddTag(ShadowSlaveGameplayTags::State_Active);
 	SupersetQuery.AddTag(ShadowSlaveGameplayTags::Combat_Engaged);
 	SupersetQuery.AddTag(ShadowSlaveGameplayTags::Ability_Action);
-	TestFalse(TEXT("HasAll must return false when container is missing a tag from query"), UShadowSlaveGameplayTagLibrary::HasAll(Container, SupersetQuery));
+	TestFalse(TEXT("HasAll must return false when container is missing a tag from query"), Container.HasAll(SupersetQuery));
 
 	// Empty query
 	FGameplayTagContainer EmptyQuery;
-	TestTrue(TEXT("HasAll against empty query must return true (all 0 tags present)"), UShadowSlaveGameplayTagLibrary::HasAll(Container, EmptyQuery));
+	TestTrue(TEXT("HasAll against empty query must return true (all 0 tags present)"), Container.HasAll(EmptyQuery));
 
 	return true;
 }
@@ -137,11 +141,9 @@ bool FShadowSlaveGameplayTagsHierarchicalMatchingTest::RunTest(const FString& Pa
 
 	// Child tag matches parent query in hierarchical matching
 	TestTrue(TEXT("State.Active must match parent State query"), Container.HasTag(ShadowSlaveGameplayTags::State));
-	TestTrue(TEXT("Library HasTag without exact match must return true for parent query"), UShadowSlaveGameplayTagLibrary::HasTag(Container, ShadowSlaveGameplayTags::State, false));
 
 	// Exact match requires exact equality
-	TestFalse(TEXT("Exact match on parent State must return false when only State.Active is present"), UShadowSlaveGameplayTagLibrary::HasTag(Container, ShadowSlaveGameplayTags::State, true));
-	TestFalse(TEXT("Native HasTagExact on parent State must return false"), Container.HasTagExact(ShadowSlaveGameplayTags::State));
+	TestFalse(TEXT("Native HasTagExact on parent State must return false when only State.Active is present"), Container.HasTagExact(ShadowSlaveGameplayTags::State));
 
 	// Direct tag hierarchical matches
 	TestTrue(TEXT("State.Active MatchesTag State"), ShadowSlaveGameplayTags::State_Active.MatchesTag(ShadowSlaveGameplayTags::State));
@@ -160,7 +162,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FShadowSlaveGameplayTagsNoGameplaySystemCouplingTest::RunTest(const FString& Parameters)
 {
-	// Architecture requirement: Gameplay Tag foundation must operate purely on data/types
+	// Architecture requirement: Gameplay Tag foundation must operate purely on native data/types
 	// without coupling to, or requiring instantiation of:
 	// - CombatComponent
 	// - StatusEffectComponent
@@ -172,12 +174,12 @@ bool FShadowSlaveGameplayTagsNoGameplaySystemCouplingTest::RunTest(const FString
 	FGameplayTagContainer StandaloneContainer;
 	TestTrue(TEXT("Standalone container can be instantiated without world or actors"), StandaloneContainer.IsEmpty());
 
-	UShadowSlaveGameplayTagLibrary::AddTag(StandaloneContainer, ShadowSlaveGameplayTags::Interaction_Interactable);
+	StandaloneContainer.AddTag(ShadowSlaveGameplayTags::Interaction_Interactable);
 	TestTrue(TEXT("Tag operations work completely independently of any gameplay subsystem"), StandaloneContainer.HasTagExact(ShadowSlaveGameplayTags::Interaction_Interactable));
 
 	// FGameplayTagQuery matching also works standalone
-	FGameplayTagQuery Query = FGameplayTagQuery::MakeQuery_MatchTag(ShadowSlaveGameplayTags::Interaction_Interactable);
-	TestTrue(TEXT("MatchesQuery works standalone without gameplay systems"), UShadowSlaveGameplayTagLibrary::MatchesQuery(StandaloneContainer, Query));
+	const FGameplayTagQuery Query = FGameplayTagQuery::MakeQuery_MatchTag(ShadowSlaveGameplayTags::Interaction_Interactable);
+	TestTrue(TEXT("Query.Matches works standalone without gameplay systems"), Query.Matches(StandaloneContainer));
 
 	return true;
 }
