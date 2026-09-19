@@ -56,9 +56,10 @@ public:
 	bool AddEchoInstance(const FShadowSlaveEchoInstance& InInstance);
 
 	/**
-	 * Removes an Echo from this component's ownership (e.g. transfer, unbinding, trading).
+	 * Removes an Echo from this component's ownership (e.g. transfer, unbinding, trading, or permanent purging).
 	 * Differentiated from destruction (see DestroyEcho).
 	 * If the Echo is currently summoned, it is automatically dismissed before removal.
+	 * After removal, the Echo is no longer owned by this component.
 	 * Returns true if the Echo was found and removed.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
@@ -73,9 +74,10 @@ public:
 
 	/**
 	 * Explicit destruction of an Echo instance (e.g. slain in battle or consumed/fed into shadows).
-	 * Distinct from normal ownership removal; triggers destruction events.
+	 * Durable terminal lifecycle state: marks the Echo as Destroyed.
+	 * A destroyed Echo remains in the collection as a durable record but CANNOT be summoned.
 	 * If summoned, it is automatically dismissed before destruction.
-	 * Returns true if the Echo was found and destroyed.
+	 * Returns true if the Echo was found and marked destroyed (or was already destroyed).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Operations")
 	bool DestroyEcho(const FGuid& InstanceId);
@@ -88,7 +90,9 @@ public:
 
 	/**
 	 * Dedicated persistence restoration API: replaces current owned Echoes with saved instances.
-	 * Preserves original instance GUIDs, summoned state, runtime state, and dynamic properties without triggering gameplay acquisition rules.
+	 * Preserves original instance GUIDs, durable lifecycle state, and dynamic properties.
+	 * INVARIANT: Transient world summon state is NEVER restored (bIsSummoned is unconditionally false,
+	 * and any transient Summoned state is normalized to Dormant).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echoes|Persistence")
 	void RestoreEchoes(const TArray<FShadowSlaveEchoInstance>& InInstances);

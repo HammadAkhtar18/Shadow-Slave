@@ -648,8 +648,13 @@ void UShadowSlaveSaveSubsystem::CaptureEchoes(UShadowSlaveEchoComponent* EchoCom
 			EchoData.InstanceId = Echo.InstanceId;
 			EchoData.EchoId = Echo.EchoDefinition ? Echo.EchoDefinition->EchoId : NAME_None;
 			EchoData.EchoPrimaryAssetId = Echo.EchoDefinition ? Echo.EchoDefinition->GetPrimaryAssetId() : FPrimaryAssetId();
-			EchoData.State = Echo.State;
-			EchoData.bIsSummoned = Echo.bIsSummoned;
+
+			// Persist durable state only: transient Summoned state is normalized to Dormant.
+			// Destroyed is preserved as durable terminal state.
+			EchoData.State = (Echo.State == EShadowSlaveEchoState::Destroyed)
+				? EShadowSlaveEchoState::Destroyed
+				: EShadowSlaveEchoState::Dormant;
+
 			EchoData.DynamicProperties = Echo.DynamicProperties;
 			OutData.Echoes.Add(EchoData);
 		}
@@ -674,8 +679,13 @@ void UShadowSlaveSaveSubsystem::RestoreEchoes(UShadowSlaveEchoComponent* EchoCom
 			FShadowSlaveEchoInstance RestoredInst;
 			RestoredInst.InstanceId = SavedEcho.InstanceId;
 			RestoredInst.EchoDefinition = ResolvedDef;
-			RestoredInst.State = SavedEcho.State;
-			RestoredInst.bIsSummoned = SavedEcho.bIsSummoned;
+
+			// Restore durable lifecycle state: Destroyed stays Destroyed, all others initialize to Dormant.
+			// Transient world summon state is NEVER restored (bIsSummoned remains false).
+			RestoredInst.State = (SavedEcho.State == EShadowSlaveEchoState::Destroyed)
+				? EShadowSlaveEchoState::Destroyed
+				: EShadowSlaveEchoState::Dormant;
+			RestoredInst.bIsSummoned = false;
 			RestoredInst.DynamicProperties = SavedEcho.DynamicProperties;
 			RestoredEchoes.Add(RestoredInst);
 		}

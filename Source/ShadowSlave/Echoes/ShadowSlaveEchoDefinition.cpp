@@ -10,7 +10,6 @@ UShadowSlaveEchoDefinition::UShadowSlaveEchoDefinition()
 	Rank = EShadowSlaveEchoRank::Unknown;
 	Class = EShadowSlaveEchoClass::Unknown;
 	SummonEssenceCost = 0.0f;
-	EssenceUpkeepPerSecond = 0.0f;
 }
 
 FPrimaryAssetId UShadowSlaveEchoDefinition::GetPrimaryAssetId() const

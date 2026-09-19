@@ -56,13 +56,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Costs", meta = (ClampMin = "0.0"))
 	float SummonEssenceCost = 0.0f;
 
-	/** Essence upkeep required while this Echo remains summoned (per second) */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Costs", meta = (ClampMin = "0.0"))
-	float EssenceUpkeepPerSecond = 0.0f;
+	/* --- Future-Facing Manifestation Assets --- */
 
-	/* --- Manifestation Assets --- */
-
-	/** Optional pawn class to spawn when this Echo is manifested in the world */
+	/**
+	 * Future-facing soft reference to a Pawn class for visual/physical manifestation.
+	 * NOTE: At this foundation level, NO world actor is spawned, no AI is created,
+	 * and this property does NOT participate in save/load restoration or runtime execution.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Assets")
 	TSoftClassPtr<APawn> PawnClass;
 

@@ -250,7 +250,8 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryCollectionSaveData
 
 /**
  * Serializable snapshot of an individual Echo instance.
- * Preserves GUID, summoned state, runtime state, and dynamic properties.
+ * Preserves GUID, definition identity, durable lifecycle state (Dormant or Destroyed), and dynamic properties.
+ * INVARIANT: Transient world summon state is NEVER persisted as world truth.
  * Does NOT duplicate static classification (Rank, Class, costs).
  */
 USTRUCT(BlueprintType)
@@ -270,13 +271,9 @@ struct SHADOWSLAVE_API FShadowSlaveEchoSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
 	FPrimaryAssetId EchoPrimaryAssetId;
 
-	/** Operational runtime state */
+	/** Durable lifecycle state (Dormant or Destroyed). Transient Summoned state is normalized to Dormant upon save. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
 	EShadowSlaveEchoState State = EShadowSlaveEchoState::Dormant;
-
-	/** Whether this Echo is actively summoned in the world */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
-	bool bIsSummoned = false;
 
 	/** Instance-specific dynamic properties */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")

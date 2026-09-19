@@ -111,7 +111,7 @@ bool UShadowSlaveEchoComponent::RemoveEchoByDefinition(const UShadowSlaveEchoDef
 
 bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 {
-	if (!InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -120,16 +120,25 @@ bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 	{
 		if (Echoes[Index].InstanceId == InstanceId)
 		{
-			if (Echoes[Index].bIsSummoned)
+			if (Echoes[Index].State == EShadowSlaveEchoState::Destroyed)
 			{
-				DismissEcho(InstanceId);
+				return true;
 			}
 
-			FShadowSlaveEchoInstance DestroyedInstance = Echoes[Index];
-			Echoes.RemoveAt(Index);
+			TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
-			OnEchoDestroyed.Broadcast(DestroyedInstance);
-			OnEchoCollectionChanged.Broadcast();
+			// Auto-dismiss if currently summoned so no stale summon state remains
+			if (Echoes[Index].bIsSummoned)
+			{
+				Echoes[Index].bIsSummoned = false;
+				OnEchoDismissed.Broadcast(Echoes[Index]);
+			}
+
+			const EShadowSlaveEchoState OldState = Echoes[Index].State;
+			Echoes[Index].State = EShadowSlaveEchoState::Destroyed;
+
+			OnEchoDestroyed.Broadcast(Echoes[Index]);
+			OnEchoStateChanged.Broadcast(Echoes[Index], OldState);
 			return true;
 		}
 	}
@@ -139,10 +148,12 @@ bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 
 void UShadowSlaveEchoComponent::ClearEchoes()
 {
-	if (Echoes.Num() == 0)
+	if (bIsProcessingEchoTransition || Echoes.Num() == 0)
 	{
 		return;
 	}
+
+	TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
 
 	for (FShadowSlaveEchoInstance& Echo : Echoes)
 	{
@@ -166,7 +177,14 @@ void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInsta
 	{
 		if (Instance.IsValid())
 		{
-			Echoes.Add(Instance);
+			FShadowSlaveEchoInstance RestoredInstance = Instance;
+			// INVARIANT: Transient world summon state is NEVER restored from disk.
+			RestoredInstance.bIsSummoned = false;
+			if (RestoredInstance.State == EShadowSlaveEchoState::Summoned)
+			{
+				RestoredInstance.State = EShadowSlaveEchoState::Dormant;
+			}
+			Echoes.Add(RestoredInstance);
 		}
 	}
 
@@ -184,14 +202,16 @@ bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId)
 	{
 		if (Echoes[Index].InstanceId == InstanceId)
 		{
-			if (Echoes[Index].bIsSummoned)
-			{
-				return true;
-			}
-
+			// Destroyed Echoes can NEVER be summoned
 			if (Echoes[Index].State == EShadowSlaveEchoState::Destroyed)
 			{
 				return false;
+			}
+
+			// Idempotent: already summoned
+			if (Echoes[Index].bIsSummoned)
+			{
+				return true;
 			}
 
 			// Validate and consume essence if configured on definition

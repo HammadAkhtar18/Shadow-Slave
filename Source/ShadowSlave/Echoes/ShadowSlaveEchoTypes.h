@@ -25,19 +25,22 @@ enum class EShadowSlaveEchoRank : uint8
 };
 
 /**
- * Canon Echo Class representing the entity's soul core count and combat tier.
+ * Classification metadata representing the entity tier / source archetype of the Echo
+ * (e.g. Beast through Titan, corresponding to soul core count in source creatures).
+ * NOTE: This is classification metadata only; it does not imply that the Echo runtime itself
+ * is an active Nightmare Creature or that this enum is an exhaustive representation of all canon.
  */
 UENUM(BlueprintType)
 enum class EShadowSlaveEchoClass : uint8
 {
 	Unknown UMETA(DisplayName = "Unknown"),
-	Beast   UMETA(DisplayName = "Beast"),   // 1 Core
-	Monster UMETA(DisplayName = "Monster"), // 2 Cores
-	Demon   UMETA(DisplayName = "Demon"),   // 3 Cores
-	Devil   UMETA(DisplayName = "Devil"),   // 4 Cores
-	Tyrant  UMETA(DisplayName = "Tyrant"),  // 5 Cores
-	Terror  UMETA(DisplayName = "Terror"),  // 6 Cores
-	Titan   UMETA(DisplayName = "Titan")    // 7 Cores
+	Beast   UMETA(DisplayName = "Beast"),   // 1 Core source archetype
+	Monster UMETA(DisplayName = "Monster"), // 2 Cores source archetype
+	Demon   UMETA(DisplayName = "Demon"),   // 3 Cores source archetype
+	Devil   UMETA(DisplayName = "Devil"),   // 4 Cores source archetype
+	Tyrant  UMETA(DisplayName = "Tyrant"),  // 5 Cores source archetype
+	Terror  UMETA(DisplayName = "Terror"),  // 6 Cores source archetype
+	Titan   UMETA(DisplayName = "Titan")    // 7 Cores source archetype
 };
 
 /**
@@ -46,9 +49,9 @@ enum class EShadowSlaveEchoClass : uint8
 UENUM(BlueprintType)
 enum class EShadowSlaveEchoState : uint8
 {
-	Dormant   UMETA(DisplayName = "Dormant"),   // Held in soul/collection, not manifested
-	Summoned  UMETA(DisplayName = "Summoned"),  // Manifested in the world
-	Destroyed UMETA(DisplayName = "Destroyed")  // Permanently destroyed or consumed
+	Dormant   UMETA(DisplayName = "Dormant"),   // Owned, held in soul/collection, not manifested
+	Summoned  UMETA(DisplayName = "Summoned"),  // Transient active manifestation state
+	Destroyed UMETA(DisplayName = "Destroyed")  // Durable terminal state: destroyed/consumed, cannot be summoned
 };
 
 /**
@@ -69,11 +72,14 @@ struct SHADOWSLAVE_API FShadowSlaveEchoInstance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Echoes")
 	TObjectPtr<UShadowSlaveEchoDefinition> EchoDefinition = nullptr;
 
-	/** Current runtime operational state of this Echo */
+	/** Operational runtime state */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Echoes")
 	EShadowSlaveEchoState State = EShadowSlaveEchoState::Dormant;
 
-	/** Whether this Echo is currently manifested / summoned in the world */
+	/**
+	 * Transient runtime flag indicating whether this Echo is currently active/summoned.
+	 * NOTE: This is strictly transient and is NEVER persisted to save files as world truth.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Echoes")
 	bool bIsSummoned = false;
 
