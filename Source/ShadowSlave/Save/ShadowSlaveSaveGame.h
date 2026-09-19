@@ -82,6 +82,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Memories")
 	FShadowSlaveMemoryCollectionSaveData MemoryData;
 
+	/** Serialized snapshot of owned Echoes with preserved GUIDs and runtime states */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Echoes")
+	FShadowSlaveEchoCollectionSaveData EchoData;
+
 	/** Serialized snapshot of equipment slot bindings */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save|Equipment")
 	FShadowSlaveEquipmentSaveData EquipmentData;

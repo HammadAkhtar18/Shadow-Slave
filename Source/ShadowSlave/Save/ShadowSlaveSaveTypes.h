@@ -6,6 +6,7 @@
 #include "Progression/ShadowSlaveProgressionTypes.h"
 #include "Aspects/ShadowSlaveAspectTypes.h"
 #include "Memories/ShadowSlaveMemoryTypes.h"
+#include "Echoes/ShadowSlaveEchoTypes.h"
 #include "Items/ShadowSlaveItemTypes.h"
 #include "Equipment/ShadowSlaveEquipmentTypes.h"
 #include "ShadowSlaveSaveTypes.generated.h"
@@ -245,6 +246,60 @@ struct SHADOWSLAVE_API FShadowSlaveMemoryCollectionSaveData
 	bool bIsValid = false;
 
 	FShadowSlaveMemoryCollectionSaveData() = default;
+};
+
+/**
+ * Serializable snapshot of an individual Echo instance.
+ * Preserves GUID, summoned state, runtime state, and dynamic properties.
+ * Does NOT duplicate static classification (Rank, Class, costs).
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveEchoSaveData
+{
+	GENERATED_BODY()
+
+	/** Unique instance GUID preserved across save/load */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FGuid InstanceId;
+
+	/** Stable identifier or asset name of the Echo Definition */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FName EchoId = NAME_None;
+
+	/** Primary Asset ID of the Echo Definition */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FPrimaryAssetId EchoPrimaryAssetId;
+
+	/** Operational runtime state */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	EShadowSlaveEchoState State = EShadowSlaveEchoState::Dormant;
+
+	/** Whether this Echo is actively summoned in the world */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	bool bIsSummoned = false;
+
+	/** Instance-specific dynamic properties */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	TMap<FName, FString> DynamicProperties;
+
+	FShadowSlaveEchoSaveData() = default;
+};
+
+/**
+ * Serializable snapshot of an Echo component collection.
+ */
+USTRUCT(BlueprintType)
+struct SHADOWSLAVE_API FShadowSlaveEchoCollectionSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	TArray<FShadowSlaveEchoSaveData> Echoes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	bool bIsValid = false;
+
+	FShadowSlaveEchoCollectionSaveData() = default;
 };
 
 /**

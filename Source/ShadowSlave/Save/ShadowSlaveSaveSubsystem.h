@@ -15,8 +15,10 @@ class UShadowSlaveProgressionComponent;
 class UShadowSlaveAspectComponent;
 class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
+class UShadowSlaveEchoComponent;
 class UShadowSlaveEquipmentComponent;
 class UShadowSlaveMemoryDefinition;
+class UShadowSlaveEchoDefinition;
 class UShadowSlaveItemDefinition;
 class UShadowSlaveAspectDefinition;
 class UShadowSlaveFlawDefinition;
@@ -113,6 +115,9 @@ public:
 	void CaptureMemories(UShadowSlaveMemoryComponent* MemComp, FShadowSlaveMemoryCollectionSaveData& OutData);
 	void RestoreMemories(UShadowSlaveMemoryComponent* MemComp, const FShadowSlaveMemoryCollectionSaveData& InData);
 
+	void CaptureEchoes(UShadowSlaveEchoComponent* EchoComp, FShadowSlaveEchoCollectionSaveData& OutData);
+	void RestoreEchoes(UShadowSlaveEchoComponent* EchoComp, const FShadowSlaveEchoCollectionSaveData& InData);
+
 	void CaptureEquipment(UShadowSlaveEquipmentComponent* EquipComp, FShadowSlaveEquipmentSaveData& OutData);
 	void RestoreEquipment(UShadowSlaveEquipmentComponent* EquipComp, const FShadowSlaveEquipmentSaveData& InData);
 
@@ -122,6 +127,7 @@ public:
 	/* --- Definition Resolution Boundary --- */
 
 	UShadowSlaveMemoryDefinition* ResolveMemoryDefinition(FName MemoryId, const FPrimaryAssetId& PrimaryAssetId) const;
+	UShadowSlaveEchoDefinition* ResolveEchoDefinition(FName EchoId, const FPrimaryAssetId& PrimaryAssetId) const;
 	UShadowSlaveItemDefinition* ResolveItemDefinition(FName ItemDefinitionId, const FPrimaryAssetId& PrimaryAssetId) const;
 	UShadowSlaveAspectDefinition* ResolveAspectDefinition(FName AspectId, const FPrimaryAssetId& PrimaryAssetId) const;
 	UShadowSlaveFlawDefinition* ResolveFlawDefinition(FName FlawId, const FPrimaryAssetId& PrimaryAssetId) const;

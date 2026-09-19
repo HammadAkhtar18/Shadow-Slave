@@ -15,6 +15,7 @@ class UShadowSlaveInventoryComponent;
 class UShadowSlaveMemoryComponent;
 class UShadowSlaveProgressionComponent;
 class UShadowSlaveAspectComponent;
+class UShadowSlaveEchoComponent;
 class UShadowSlaveInteractionComponent;
 
 /**
@@ -50,6 +51,10 @@ class SHADOWSLAVE_API AShadowSlavePlayerCharacter : public AShadowSlaveCharacter
 	/** Modular aspect component managing aspect identity, abilities, and flaw */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Aspects", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShadowSlaveAspectComponent> AspectComponent;
+
+	/** Modular echo component managing player Echoes, summoning, and lifecycle */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Echoes", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShadowSlaveEchoComponent> EchoComponent;
 
 	/** Modular interaction component managing detection, prompts, and world interactions */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Interaction", meta = (AllowPrivateAccess = "true"))
@@ -186,6 +191,9 @@ public:
 
 	/** Returns AspectComponent subobject **/
 	FORCEINLINE UShadowSlaveAspectComponent* GetAspectComponent() const { return AspectComponent; }
+
+	/** Returns EchoComponent subobject **/
+	FORCEINLINE UShadowSlaveEchoComponent* GetEchoComponent() const { return EchoComponent; }
 
 	/** Returns InteractionComponent subobject **/
 	FORCEINLINE UShadowSlaveInteractionComponent* GetInteractionComponent() const { return InteractionComponent; }

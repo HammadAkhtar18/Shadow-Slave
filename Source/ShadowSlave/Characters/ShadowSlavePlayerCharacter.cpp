@@ -8,6 +8,7 @@
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Progression/ShadowSlaveProgressionComponent.h"
 #include "Aspects/ShadowSlaveAspectComponent.h"
+#include "Echoes/ShadowSlaveEchoComponent.h"
 #include "Interaction/ShadowSlaveInteractionComponent.h"
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "Gameplay/ShadowSlaveGameplaySubsystem.h"
@@ -56,6 +57,9 @@ AShadowSlavePlayerCharacter::AShadowSlavePlayerCharacter(const FObjectInitialize
 
 	// Create modular aspect component
 	AspectComponent = CreateDefaultSubobject<UShadowSlaveAspectComponent>(TEXT("AspectComponent"));
+
+	// Create modular echo component
+	EchoComponent = CreateDefaultSubobject<UShadowSlaveEchoComponent>(TEXT("EchoComponent"));
 
 	// Create modular interaction component
 	InteractionComponent = CreateDefaultSubobject<UShadowSlaveInteractionComponent>(TEXT("InteractionComponent"));

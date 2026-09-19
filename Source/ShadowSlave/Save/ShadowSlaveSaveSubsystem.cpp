@@ -19,6 +19,8 @@
 #include "Items/ShadowSlaveItemDefinition.h"
 #include "Memories/ShadowSlaveMemoryComponent.h"
 #include "Memories/ShadowSlaveMemoryDefinition.h"
+#include "Echoes/ShadowSlaveEchoComponent.h"
+#include "Echoes/ShadowSlaveEchoDefinition.h"
 #include "Equipment/ShadowSlaveEquipmentComponent.h"
 #include "Nightmares/ShadowSlaveNightmareSubsystem.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
@@ -180,6 +182,11 @@ UShadowSlaveSaveGame* UShadowSlaveSaveSubsystem::CreateSaveSnapshot(APawn* Playe
 			CaptureMemories(Mem, SaveObject->MemoryData);
 		}
 
+		if (UShadowSlaveEchoComponent* Echo = PlayerPawn->FindComponentByClass<UShadowSlaveEchoComponent>())
+		{
+			CaptureEchoes(Echo, SaveObject->EchoData);
+		}
+
 		if (UShadowSlaveEquipmentComponent* Equip = PlayerPawn->FindComponentByClass<UShadowSlaveEquipmentComponent>())
 		{
 			CaptureEquipment(Equip, SaveObject->EquipmentData);
@@ -279,6 +286,15 @@ bool UShadowSlaveSaveSubsystem::ApplySaveSnapshot(UShadowSlaveSaveGame* SaveGame
 		if (UShadowSlaveMemoryComponent* Mem = PlayerPawn->FindComponentByClass<UShadowSlaveMemoryComponent>())
 		{
 			RestoreMemories(Mem, SaveGame->MemoryData);
+		}
+	}
+
+	// 6b. Echo collection restoration
+	if (PlayerPawn && SaveGame->EchoData.bIsValid)
+	{
+		if (UShadowSlaveEchoComponent* Echo = PlayerPawn->FindComponentByClass<UShadowSlaveEchoComponent>())
+		{
+			RestoreEchoes(Echo, SaveGame->EchoData);
 		}
 	}
 
@@ -614,6 +630,64 @@ void UShadowSlaveSaveSubsystem::RestoreMemories(UShadowSlaveMemoryComponent* Mem
 	MemComp->RestoreMemories(RestoredMemories);
 }
 
+void UShadowSlaveSaveSubsystem::CaptureEchoes(UShadowSlaveEchoComponent* EchoComp, FShadowSlaveEchoCollectionSaveData& OutData)
+{
+	if (!EchoComp)
+	{
+		OutData.bIsValid = false;
+		return;
+	}
+
+	OutData.Echoes.Empty();
+
+	for (const FShadowSlaveEchoInstance& Echo : EchoComp->GetEchoes())
+	{
+		if (Echo.IsValid())
+		{
+			FShadowSlaveEchoSaveData EchoData;
+			EchoData.InstanceId = Echo.InstanceId;
+			EchoData.EchoId = Echo.EchoDefinition ? Echo.EchoDefinition->EchoId : NAME_None;
+			EchoData.EchoPrimaryAssetId = Echo.EchoDefinition ? Echo.EchoDefinition->GetPrimaryAssetId() : FPrimaryAssetId();
+			EchoData.State = Echo.State;
+			EchoData.bIsSummoned = Echo.bIsSummoned;
+			EchoData.DynamicProperties = Echo.DynamicProperties;
+			OutData.Echoes.Add(EchoData);
+		}
+	}
+
+	OutData.bIsValid = true;
+}
+
+void UShadowSlaveSaveSubsystem::RestoreEchoes(UShadowSlaveEchoComponent* EchoComp, const FShadowSlaveEchoCollectionSaveData& InData)
+{
+	if (!EchoComp || !InData.bIsValid)
+	{
+		return;
+	}
+
+	TArray<FShadowSlaveEchoInstance> RestoredEchoes;
+	for (const FShadowSlaveEchoSaveData& SavedEcho : InData.Echoes)
+	{
+		UShadowSlaveEchoDefinition* ResolvedDef = ResolveEchoDefinition(SavedEcho.EchoId, SavedEcho.EchoPrimaryAssetId);
+		if (ResolvedDef)
+		{
+			FShadowSlaveEchoInstance RestoredInst;
+			RestoredInst.InstanceId = SavedEcho.InstanceId;
+			RestoredInst.EchoDefinition = ResolvedDef;
+			RestoredInst.State = SavedEcho.State;
+			RestoredInst.bIsSummoned = SavedEcho.bIsSummoned;
+			RestoredInst.DynamicProperties = SavedEcho.DynamicProperties;
+			RestoredEchoes.Add(RestoredInst);
+		}
+		else
+		{
+			UE_LOG(LogShadowSlave, Warning, TEXT("RestoreEchoes: could not resolve Echo definition '%s'."), *SavedEcho.EchoId.ToString());
+		}
+	}
+
+	EchoComp->RestoreEchoes(RestoredEchoes);
+}
+
 void UShadowSlaveSaveSubsystem::CaptureEquipment(UShadowSlaveEquipmentComponent* EquipComp, FShadowSlaveEquipmentSaveData& OutData)
 {
 	if (!EquipComp)
@@ -815,6 +889,44 @@ UShadowSlaveMemoryDefinition* UShadowSlaveSaveSubsystem::ResolveMemoryDefinition
 
 		// 3. Fallback: find loaded object in memory
 		if (UShadowSlaveMemoryDefinition* Found = FindObject<UShadowSlaveMemoryDefinition>(ANY_PACKAGE, *MemoryId.ToString()))
+		{
+			return Found;
+		}
+	}
+
+	return nullptr;
+}
+
+UShadowSlaveEchoDefinition* UShadowSlaveSaveSubsystem::ResolveEchoDefinition(FName EchoId, const FPrimaryAssetId& PrimaryAssetId) const
+{
+	// 1. Attempt Asset Manager resolution if registered
+	if (PrimaryAssetId.IsValid() && UAssetManager::IsInitialized())
+	{
+		if (UObject* AssetObj = UAssetManager::Get().GetPrimaryAssetObject(PrimaryAssetId))
+		{
+			if (UShadowSlaveEchoDefinition* Def = Cast<UShadowSlaveEchoDefinition>(AssetObj))
+			{
+				return Def;
+			}
+		}
+
+		const FSoftObjectPath AssetPath = UAssetManager::Get().GetPrimaryAssetPath(PrimaryAssetId);
+		if (AssetPath.IsValid())
+		{
+			if (UObject* Loaded = AssetPath.TryLoad())
+			{
+				if (UShadowSlaveEchoDefinition* Def = Cast<UShadowSlaveEchoDefinition>(Loaded))
+				{
+					return Def;
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: find loaded object in memory
+	if (!EchoId.IsNone())
+	{
+		if (UShadowSlaveEchoDefinition* Found = FindObject<UShadowSlaveEchoDefinition>(ANY_PACKAGE, *EchoId.ToString()))
 		{
 			return Found;
 		}
