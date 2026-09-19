@@ -12,7 +12,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, essence cost, destruction, and save/load
-├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load, and authority boundaries
+├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, and expired-effect-not-restored verification
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
 └── README.md                         # Documentation and discovery guide
 ```

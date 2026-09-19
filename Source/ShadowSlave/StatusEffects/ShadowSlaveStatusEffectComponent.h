@@ -13,6 +13,21 @@
  * Generic technical foundation with zero canon mechanics.
  * Purely event-driven and timer-driven: NO Tick, NO polling loops.
  * Strictly respects AttributeComponent authority: does NOT duplicate health/stamina/essence.
+ *
+ * REENTRANCY CONTRACT:
+ * Mutation operations (ApplyEffect, RemoveEffect, RemoveAllEffects, ClearEffects, RestoreEffects)
+ * are protected by bIsProcessingEffectTransition. If any of these is called while a transition
+ * is already in progress (e.g. from within an OnStatusEffectApplied, OnStatusEffectRemoved,
+ * OnStatusEffectExpired, or OnStatusEffectStackChanged callback), the nested call is rejected
+ * safely: ApplyEffect returns an invalid GUID, RemoveEffect returns false, etc.
+ *
+ * This prevents:
+ * - Iterator invalidation of the ActiveEffects collection during enumeration
+ * - Recursive state corruption from cascading effect mutations
+ * - Orphaned or duplicate timer handles
+ *
+ * Callers requiring reactive mutation in response to effect events must defer the mutation
+ * to after the current transition completes (e.g. via a deferred gameplay action or next frame).
  */
 UCLASS(ClassGroup = (ShadowSlave), meta = (BlueprintSpawnableComponent))
 class SHADOWSLAVE_API UShadowSlaveStatusEffectComponent : public UActorComponent
@@ -161,6 +176,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|StatusEffects")
 	TArray<FShadowSlaveStatusEffectInstance> ActiveEffects;
 
-	/** Re-entrancy guard flag to prevent recursive modifications during delegate broadcasts */
+	/**
+	 * Re-entrancy guard flag. Set to true during the scope of any mutation operation
+	 * (Apply, Remove, RemoveAll, Clear, Restore, HandleExpired).
+	 * While true, all mutation calls are rejected safely (returning invalid GUID or false)
+	 * to prevent collection invalidation and recursive state corruption.
+	 * See the REENTRANCY CONTRACT in the class docstring above.
+	 */
 	bool bIsProcessingEffectTransition = false;
 };

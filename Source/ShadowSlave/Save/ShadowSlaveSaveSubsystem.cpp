@@ -802,17 +802,47 @@ void UShadowSlaveSaveSubsystem::CaptureStatusEffects(UShadowSlaveStatusEffectCom
 	for (const FShadowSlaveStatusEffectInstance& Effect : EffectComp->GetActiveEffects())
 	{
 		// Only capture effects explicitly marked as persisting across save/load
-		if (Effect.IsValid() && Effect.EffectDefinition && Effect.EffectDefinition->bPersistAcrossSaveLoad)
+		if (!Effect.IsValid() || !Effect.EffectDefinition || !Effect.EffectDefinition->bPersistAcrossSaveLoad)
 		{
-			FShadowSlaveStatusEffectSaveData EffectSave;
-			EffectSave.InstanceId = Effect.InstanceId;
-			EffectSave.EffectId = Effect.EffectDefinition->EffectId;
-			EffectSave.EffectPrimaryAssetId = Effect.EffectDefinition->GetPrimaryAssetId();
-			EffectSave.CurrentStacks = Effect.CurrentStacks;
-			EffectSave.DynamicProperties = Effect.DynamicProperties;
-
-			OutData.Effects.Add(EffectSave);
+			continue;
 		}
+
+		FShadowSlaveStatusEffectSaveData EffectSave;
+		EffectSave.InstanceId = Effect.InstanceId;
+		EffectSave.EffectId = Effect.EffectDefinition->EffectId;
+		EffectSave.EffectPrimaryAssetId = Effect.EffectDefinition->GetPrimaryAssetId();
+		EffectSave.CurrentStacks = Effect.CurrentStacks;
+		EffectSave.DynamicProperties = Effect.DynamicProperties;
+
+		// Preserve generic source attribution (SourceId, SourceName).
+		// Transient actor pointer (SourceActor) is NOT serialized.
+		EffectSave.SourceId = Effect.Source.SourceId;
+		EffectSave.SourceName = Effect.Source.SourceName;
+
+		// Compute remaining duration based on duration policy
+		if (Effect.EffectDefinition->DurationPolicy == EStatusEffectDurationPolicy::Persistent)
+		{
+			// Persistent: sentinel value, infinite until explicitly removed
+			EffectSave.RemainingDuration = -1.0f;
+		}
+		else if (Effect.EffectDefinition->DurationPolicy == EStatusEffectDurationPolicy::Timed)
+		{
+			// Timed: compute actual remaining seconds
+			const float Remaining = EffectComp->GetRemainingDuration(Effect.InstanceId);
+			if (Remaining <= 0.0f)
+			{
+				// Effect has expired or is about to expire; do not serialize as active
+				continue;
+			}
+			EffectSave.RemainingDuration = Remaining;
+		}
+		else
+		{
+			// Instant effects are never in ActiveEffects; defensive skip
+			continue;
+		}
+
+		OutData.Effects.Add(EffectSave);
 	}
 
 	OutData.bIsValid = true;
@@ -829,25 +859,42 @@ void UShadowSlaveSaveSubsystem::RestoreStatusEffects(UShadowSlaveStatusEffectCom
 	for (const FShadowSlaveStatusEffectSaveData& SavedEffect : InData.Effects)
 	{
 		UShadowSlaveStatusEffectDefinition* ResolvedDef = ResolveStatusEffectDefinition(SavedEffect.EffectId, SavedEffect.EffectPrimaryAssetId);
-		if (ResolvedDef)
-		{
-			FShadowSlaveStatusEffectInstance RestoredInst;
-			RestoredInst.InstanceId = SavedEffect.InstanceId;
-			RestoredInst.EffectDefinition = ResolvedDef;
-			RestoredInst.CurrentStacks = FMath::Max(1, SavedEffect.CurrentStacks);
-			RestoredInst.DynamicProperties = SavedEffect.DynamicProperties;
-
-			if (ResolvedDef->DurationPolicy == EStatusEffectDurationPolicy::Timed)
-			{
-				RestoredInst.TotalDuration = ResolvedDef->Duration;
-			}
-
-			RestoredEffects.Add(RestoredInst);
-		}
-		else
+		if (!ResolvedDef)
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("RestoreStatusEffects: could not resolve StatusEffect definition '%s'."), *SavedEffect.EffectId.ToString());
+			continue;
 		}
+
+		// For timed effects, use the saved remaining duration.
+		// If saved remaining <= 0, the effect expired before or during save — do not resurrect it.
+		if (ResolvedDef->DurationPolicy == EStatusEffectDurationPolicy::Timed)
+		{
+			if (SavedEffect.RemainingDuration <= 0.0f)
+			{
+				UE_LOG(LogShadowSlave, Log, TEXT("RestoreStatusEffects: Skipping expired timed effect '%s' (RemainingDuration=%.2f)."),
+					*SavedEffect.EffectId.ToString(), SavedEffect.RemainingDuration);
+				continue;
+			}
+		}
+
+		FShadowSlaveStatusEffectInstance RestoredInst;
+		RestoredInst.InstanceId = SavedEffect.InstanceId;
+		RestoredInst.EffectDefinition = ResolvedDef;
+		RestoredInst.CurrentStacks = FMath::Max(1, SavedEffect.CurrentStacks);
+		RestoredInst.DynamicProperties = SavedEffect.DynamicProperties;
+
+		// Restore generic source attribution; actor pointer is left null (transient, not serialized)
+		RestoredInst.Source.SourceId = SavedEffect.SourceId;
+		RestoredInst.Source.SourceName = SavedEffect.SourceName;
+		RestoredInst.Source.SourceActor = nullptr;
+
+		if (ResolvedDef->DurationPolicy == EStatusEffectDurationPolicy::Timed)
+		{
+			// Use saved remaining duration, NOT the definition's full configured duration
+			RestoredInst.TotalDuration = SavedEffect.RemainingDuration;
+		}
+
+		RestoredEffects.Add(RestoredInst);
 	}
 
 	EffectComp->RestoreEffects(RestoredEffects);

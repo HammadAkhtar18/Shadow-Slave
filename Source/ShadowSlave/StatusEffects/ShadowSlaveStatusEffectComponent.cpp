@@ -433,10 +433,14 @@ void UShadowSlaveStatusEffectComponent::RestoreEffects(const TArray<FShadowSlave
 				ScheduleExpirationTimer(NewInst);
 			}
 			ActiveEffects.Add(NewInst);
-			OnStatusEffectApplied.Broadcast(NewInst);
+			// NOTE: No OnStatusEffectApplied broadcast during restoration.
+			// Restoration is reconstitution from serialized state, not a new gameplay application.
+			// This prevents duplicate gameplay reactions (e.g. attribute modifications, UI notifications)
+			// that already occurred during the original application.
 		}
 	}
 
+	// Single collection-changed notification for the entire restoration batch
 	OnStatusEffectCollectionChanged.Broadcast();
 }
 

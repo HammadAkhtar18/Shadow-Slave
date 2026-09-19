@@ -348,8 +348,19 @@ struct SHADOWSLAVE_API FShadowSlaveEquipmentSaveData
 
 /**
  * Serializable snapshot of an individual status effect instance.
- * Preserves GUID, definition identity, stack count, and dynamic properties.
- * Timers, delegates, and raw actor pointers are strictly transient and never saved.
+ * Preserves GUID, definition identity, stack count, remaining duration,
+ * generic source attribution, and dynamic properties.
+ *
+ * NEVER serialized:
+ * - FTimerHandle (transient engine state)
+ * - TWeakObjectPtr<AActor> (transient actor reference)
+ * - Delegate bindings
+ *
+ * Duration semantics:
+ * - Timed effects: RemainingDuration holds the seconds remaining at capture time.
+ *   Effects with RemainingDuration <= 0 at capture are omitted (expired).
+ * - Persistent effects: RemainingDuration == -1.0f (sentinel: infinite until removed).
+ * - Instant effects: never serialized (not retained in ActiveEffects).
  */
 USTRUCT(BlueprintType)
 struct SHADOWSLAVE_API FShadowSlaveStatusEffectSaveData
@@ -371,6 +382,22 @@ struct SHADOWSLAVE_API FShadowSlaveStatusEffectSaveData
 	/** Current stack count */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
 	int32 CurrentStacks = 1;
+
+	/**
+	 * Remaining duration in seconds at capture time.
+	 * -1.0f sentinel for Persistent effects (infinite until explicitly removed).
+	 * Timed effects with RemainingDuration <= 0 are NOT captured (already expired).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	float RemainingDuration = -1.0f;
+
+	/** Generic source identifier (GUID) preserved across save/load. Actor pointer is NOT saved. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FGuid SourceId;
+
+	/** Generic source name preserved across save/load. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")
+	FName SourceName = NAME_None;
 
 	/** Instance-specific dynamic properties */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ShadowSlave|Save")

@@ -345,7 +345,7 @@ bool FShadowSlaveStatusEffectValidationAndRejectionTest::RunTest(const FString& 
 	return true;
 }
 
-// 6. Save / Load Boundary Test
+// 6. Save / Load Boundary Test (with RemainingDuration and source attribution)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveStatusEffectSaveLoadBoundaryTest,
 	"ShadowSlave.StatusEffects.SaveLoadBoundary",
@@ -372,10 +372,12 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 	TransientDef->Duration = 5.0f;
 	TransientDef->bPersistAcrossSaveLoad = false;
 
-	// Apply persistent effect with dynamic property
+	// Apply persistent effect with source attribution and dynamic property
+	const FGuid SourceGuid = FGuid::NewGuid();
+	const FShadowSlaveStatusEffectSource Source(SourceGuid, FName(TEXT("TestAttrSource")), Fixture.Player);
 	TMap<FName, FString> DynamicProps;
 	DynamicProps.Add(FName(TEXT("SaveKey")), TEXT("SaveValue"));
-	const FGuid PersistId = Fixture.StatusComp->ApplyEffect(Fixture.EffectDef, FShadowSlaveStatusEffectSource(), DynamicProps);
+	const FGuid PersistId = Fixture.StatusComp->ApplyEffect(Fixture.EffectDef, Source, DynamicProps);
 
 	// Apply transient effect
 	const FGuid TransientId = Fixture.StatusComp->ApplyEffectSimple(TransientDef);
@@ -397,6 +399,14 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 		TestEqual(TEXT("Saved InstanceId must match original GUID"), Saved.InstanceId, PersistId);
 		TestEqual(TEXT("Saved stacks must match"), Saved.CurrentStacks, 1);
 
+		// RemainingDuration sentinel for Persistent effects
+		TestEqual(TEXT("Persistent effect RemainingDuration must be -1.0f sentinel"), Saved.RemainingDuration, -1.0f);
+
+		// Source attribution must be preserved
+		TestEqual(TEXT("Saved SourceId must match"), Saved.SourceId, SourceGuid);
+		TestEqual(TEXT("Saved SourceName must match"), Saved.SourceName, FName(TEXT("TestAttrSource")));
+
+		// Dynamic properties must be preserved
 		const FString* SavedVal = Saved.DynamicProperties.Find(FName(TEXT("SaveKey")));
 		TestNotNull(TEXT("Dynamic property must be saved"), SavedVal);
 		if (SavedVal)
@@ -405,7 +415,7 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 		}
 	}
 
-	// Restore into a fresh component
+	// Restore into a fresh component and verify source attribution survives
 	UShadowSlaveStatusEffectComponent* RestoredComp = NewObject<UShadowSlaveStatusEffectComponent>(Fixture.Player);
 	TArray<FShadowSlaveStatusEffectInstance> RestoredInstances;
 	for (const FShadowSlaveStatusEffectSaveData& Saved : SaveData.Effects)
@@ -415,6 +425,10 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 		RestoredInst.EffectDefinition = Fixture.EffectDef;
 		RestoredInst.CurrentStacks = Saved.CurrentStacks;
 		RestoredInst.DynamicProperties = Saved.DynamicProperties;
+		// Restore source (actor pointer is null after restore)
+		RestoredInst.Source.SourceId = Saved.SourceId;
+		RestoredInst.Source.SourceName = Saved.SourceName;
+		RestoredInst.Source.SourceActor = nullptr;
 		RestoredInstances.Add(RestoredInst);
 	}
 
@@ -423,6 +437,13 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 	TestEqual(TEXT("Restored component must have 1 effect"), RestoredComp->GetEffectCount(), 1);
 	TestTrue(TEXT("Restored component must have persistent definition"), RestoredComp->HasEffect(Fixture.EffectDef));
 	TestTrue(TEXT("Restored component must have original GUID"), RestoredComp->HasEffectByInstanceId(PersistId));
+
+	// Verify restored source attribution
+	FShadowSlaveStatusEffectInstance RestoredFound;
+	TestTrue(TEXT("FindEffect on restored component must succeed"), RestoredComp->FindEffect(Fixture.EffectDef, RestoredFound));
+	TestEqual(TEXT("Restored SourceId must match"), RestoredFound.Source.SourceId, SourceGuid);
+	TestEqual(TEXT("Restored SourceName must match"), RestoredFound.Source.SourceName, FName(TEXT("TestAttrSource")));
+	TestFalse(TEXT("Restored SourceActor must be null"), RestoredFound.Source.SourceActor.IsValid());
 
 	return true;
 }
@@ -459,6 +480,242 @@ bool FShadowSlaveStatusEffectAttributeAuthorityBoundaryTest::RunTest(const FStri
 	TestEqual(TEXT("Health must be unchanged after effect removal"), Fixture.Attributes->GetCurrentHealth(), InitialHealth);
 	TestEqual(TEXT("Stamina must be unchanged after effect removal"), Fixture.Attributes->GetCurrentStamina(), InitialStamina);
 	TestEqual(TEXT("Essence must be unchanged after effect removal"), Fixture.Attributes->GetCurrentEssence(), InitialEssence);
+
+	return true;
+}
+
+// 8. Reentrancy Safety Test — Case A: remove during apply callback
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectReentrancyRemoveDuringApplyTest,
+	"ShadowSlave.StatusEffects.ReentrancyRemoveDuringApply",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectReentrancyRemoveDuringApplyTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveStatusEffectTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize(
+		FName(TEXT("Test_ReentrancyA")),
+		EStatusEffectDurationPolicy::Persistent
+	));
+
+	// Track whether the callback attempted to remove and whether it was rejected
+	bool bCallbackFired = false;
+	bool bRemoveResult = false;
+	FGuid CapturedInstanceId;
+
+	// Bind a delegate that attempts to remove the effect during the apply transition
+	FDelegateHandle Handle = Fixture.StatusComp->OnStatusEffectApplied.AddLambda(
+		[&](const FShadowSlaveStatusEffectInstance& EffectInstance)
+		{
+			bCallbackFired = true;
+			CapturedInstanceId = EffectInstance.InstanceId;
+			// Attempt to remove the just-applied effect from within the callback
+			bRemoveResult = Fixture.StatusComp->RemoveEffect(EffectInstance.InstanceId);
+		}
+	);
+
+	const FGuid AppliedId = Fixture.StatusComp->ApplyEffectSimple(Fixture.EffectDef);
+
+	TestTrue(TEXT("OnStatusEffectApplied callback must have fired"), bCallbackFired);
+	TestTrue(TEXT("ApplyEffect must return valid GUID"), AppliedId.IsValid());
+	TestFalse(TEXT("RemoveEffect during transition must return false (rejected)"), bRemoveResult);
+
+	// The effect must still be present — the removal was rejected
+	TestEqual(TEXT("Effect count must be 1 (removal was rejected)"), Fixture.StatusComp->GetEffectCount(), 1);
+	TestTrue(TEXT("Effect must still exist by GUID"), Fixture.StatusComp->HasEffectByInstanceId(AppliedId));
+
+	// Cleanup
+	Fixture.StatusComp->OnStatusEffectApplied.Remove(Handle);
+
+	// Now, after the transition is complete, remove should work normally
+	const bool PostTransitionRemove = Fixture.StatusComp->RemoveEffect(AppliedId);
+	TestTrue(TEXT("RemoveEffect after transition must succeed"), PostTransitionRemove);
+	TestEqual(TEXT("Effect count must be 0 after post-transition removal"), Fixture.StatusComp->GetEffectCount(), 0);
+
+	return true;
+}
+
+// 9. Reentrancy Safety Test — Case B: apply during remove callback
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectReentrancyApplyDuringRemoveTest,
+	"ShadowSlave.StatusEffects.ReentrancyApplyDuringRemove",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectReentrancyApplyDuringRemoveTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveStatusEffectTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize(
+		FName(TEXT("Test_ReentrancyB")),
+		EStatusEffectDurationPolicy::Persistent
+	));
+
+	// Create a second definition to attempt applying during remove
+	UShadowSlaveStatusEffectDefinition* SecondDef = NewObject<UShadowSlaveStatusEffectDefinition>(Fixture.Player);
+	SecondDef->EffectId = FName(TEXT("Test_ReentrancyB_Second"));
+	SecondDef->DurationPolicy = EStatusEffectDurationPolicy::Persistent;
+
+	// Apply and then set up a delegate that attempts to apply another effect during removal
+	const FGuid AppliedId = Fixture.StatusComp->ApplyEffectSimple(Fixture.EffectDef);
+	TestTrue(TEXT("Initial apply must succeed"), AppliedId.IsValid());
+
+	bool bCallbackFired = false;
+	FGuid ReentrantApplyResult;
+
+	FDelegateHandle Handle = Fixture.StatusComp->OnStatusEffectRemoved.AddLambda(
+		[&](const FShadowSlaveStatusEffectInstance& EffectInstance)
+		{
+			bCallbackFired = true;
+			// Attempt to apply another effect during the remove transition
+			ReentrantApplyResult = Fixture.StatusComp->ApplyEffectSimple(SecondDef);
+		}
+	);
+
+	const bool RemoveSuccess = Fixture.StatusComp->RemoveEffect(AppliedId);
+
+	TestTrue(TEXT("RemoveEffect must succeed"), RemoveSuccess);
+	TestTrue(TEXT("OnStatusEffectRemoved callback must have fired"), bCallbackFired);
+	TestFalse(TEXT("Reentrant ApplyEffect must return invalid GUID (rejected)"), ReentrantApplyResult.IsValid());
+
+	// Only the original effect was removed; the reentrant apply was rejected
+	TestEqual(TEXT("Effect count must be 0 (original removed, reentrant rejected)"), Fixture.StatusComp->GetEffectCount(), 0);
+	TestFalse(TEXT("Second definition must not be present"), Fixture.StatusComp->HasEffect(SecondDef));
+
+	// Cleanup
+	Fixture.StatusComp->OnStatusEffectRemoved.Remove(Handle);
+
+	// After the transition, applying the second effect should work normally
+	const FGuid PostApplyId = Fixture.StatusComp->ApplyEffectSimple(SecondDef);
+	TestTrue(TEXT("Post-transition ApplyEffect must succeed"), PostApplyId.IsValid());
+	TestEqual(TEXT("Effect count must be 1"), Fixture.StatusComp->GetEffectCount(), 1);
+
+	return true;
+}
+
+// 10. Timed Persistence — remaining duration is preserved, NOT reset to full definition duration
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectTimedPersistenceTest,
+	"ShadowSlave.StatusEffects.TimedPersistenceRemainingDuration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectTimedPersistenceTest::RunTest(const FString& Parameters)
+{
+	// This test verifies the serialization contract for remaining duration.
+	// Because this environment cannot advance UE5 world timers, we verify the serialized
+	// save data values directly and confirm the restoration path uses RemainingDuration
+	// instead of Definition->Duration.
+	//
+	// Actual timer progression and expiration require UE5 runtime execution.
+
+	FShadowSlaveStatusEffectTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize(
+		FName(TEXT("Test_TimedPersist")),
+		EStatusEffectDurationPolicy::Timed,
+		60.0f, // Definition duration: 60 seconds
+		EStatusEffectStackingPolicy::RefreshDuration,
+		1,
+		EStatusEffectPolarity::Neutral,
+		true // bPersistAcrossSaveLoad = true
+	));
+
+	// Apply the timed persistent effect
+	const FGuid EffectId = Fixture.StatusComp->ApplyEffectSimple(Fixture.EffectDef);
+	TestTrue(TEXT("Timed persistent effect must be applied"), EffectId.IsValid());
+	TestEqual(TEXT("Effect count must be 1"), Fixture.StatusComp->GetEffectCount(), 1);
+
+	// Capture save data
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	FShadowSlaveStatusEffectCollectionSaveData SaveData;
+	SaveSubsystem->CaptureStatusEffects(Fixture.StatusComp, SaveData);
+
+	TestTrue(TEXT("SaveData must be valid"), SaveData.bIsValid);
+	TestEqual(TEXT("One effect must be captured"), SaveData.Effects.Num(), 1);
+
+	if (SaveData.Effects.Num() == 1)
+	{
+		// Verify remaining duration was computed, not left at default -1.0f
+		const float CapturedRemaining = SaveData.Effects[0].RemainingDuration;
+		TestTrue(TEXT("Captured RemainingDuration must be positive"), CapturedRemaining > 0.0f);
+		TestTrue(TEXT("Captured RemainingDuration must be <= definition duration (60s)"), CapturedRemaining <= 60.0f);
+
+		// Simulate a reduced remaining duration for the restoration test.
+		// Pretend we saved with 12 seconds remaining (cannot actually advance timers here).
+		FShadowSlaveStatusEffectCollectionSaveData SimulatedSaveData;
+		SimulatedSaveData.bIsValid = true;
+		FShadowSlaveStatusEffectSaveData SimulatedEffect = SaveData.Effects[0];
+		SimulatedEffect.RemainingDuration = 12.0f; // Simulated: 12 seconds remaining
+		SimulatedSaveData.Effects.Add(SimulatedEffect);
+
+		// Restore from simulated save data
+		UShadowSlaveStatusEffectComponent* RestoredComp = NewObject<UShadowSlaveStatusEffectComponent>(Fixture.Player);
+		SaveSubsystem->RestoreStatusEffects(RestoredComp, SimulatedSaveData);
+
+		TestEqual(TEXT("Restored component must have 1 effect"), RestoredComp->GetEffectCount(), 1);
+
+		FShadowSlaveStatusEffectInstance RestoredInst;
+		TestTrue(TEXT("FindEffect on restored component must succeed"), RestoredComp->FindEffect(Fixture.EffectDef, RestoredInst));
+
+		// CRITICAL: TotalDuration must be the saved remaining (12s), NOT definition's full 60s
+		TestEqual(TEXT("Restored TotalDuration must be saved RemainingDuration (12s), NOT definition Duration (60s)"),
+			RestoredInst.TotalDuration, 12.0f);
+
+		// Verify the definition's Duration is unchanged (it's still the archetype default)
+		TestEqual(TEXT("Definition Duration must still be 60s (unchanged archetype)"),
+			Fixture.EffectDef->Duration, 60.0f);
+	}
+
+	return true;
+}
+
+// 11. Expired timed effect must NOT be restored
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectExpiredNotRestoredTest,
+	"ShadowSlave.StatusEffects.ExpiredTimedEffectNotRestored",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectExpiredNotRestoredTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveStatusEffectTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize(
+		FName(TEXT("Test_ExpiredRestore")),
+		EStatusEffectDurationPolicy::Timed,
+		10.0f,
+		EStatusEffectStackingPolicy::RefreshDuration,
+		1,
+		EStatusEffectPolarity::Neutral,
+		true
+	));
+
+	// Construct save data with expired remaining duration
+	FShadowSlaveStatusEffectCollectionSaveData SaveData;
+	SaveData.bIsValid = true;
+
+	FShadowSlaveStatusEffectSaveData ExpiredEffect;
+	ExpiredEffect.InstanceId = FGuid::NewGuid();
+	ExpiredEffect.EffectId = Fixture.EffectDef->EffectId;
+	ExpiredEffect.EffectPrimaryAssetId = Fixture.EffectDef->GetPrimaryAssetId();
+	ExpiredEffect.CurrentStacks = 1;
+	ExpiredEffect.RemainingDuration = 0.0f; // Expired!
+	SaveData.Effects.Add(ExpiredEffect);
+
+	// Also add one with negative remaining duration
+	FShadowSlaveStatusEffectSaveData NegativeEffect;
+	NegativeEffect.InstanceId = FGuid::NewGuid();
+	NegativeEffect.EffectId = Fixture.EffectDef->EffectId;
+	NegativeEffect.EffectPrimaryAssetId = Fixture.EffectDef->GetPrimaryAssetId();
+	NegativeEffect.CurrentStacks = 1;
+	NegativeEffect.RemainingDuration = -5.0f; // Invalid for timed
+	SaveData.Effects.Add(NegativeEffect);
+
+	// Restore — both should be skipped
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	UShadowSlaveStatusEffectComponent* RestoredComp = NewObject<UShadowSlaveStatusEffectComponent>(Fixture.Player);
+	SaveSubsystem->RestoreStatusEffects(RestoredComp, SaveData);
+
+	TestEqual(TEXT("Restored component must have 0 effects (expired effects skipped)"), RestoredComp->GetEffectCount(), 0);
 
 	return true;
 }
