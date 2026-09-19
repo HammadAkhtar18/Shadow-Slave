@@ -12,7 +12,7 @@ UShadowSlaveEchoComponent::UShadowSlaveEchoComponent()
 
 bool UShadowSlaveEchoComponent::AcquireEcho(UShadowSlaveEchoDefinition* EchoDef, FShadowSlaveEchoInstance& OutInstance)
 {
-	if (bIsProcessingEchoTransition || !EchoDef)
+	if (bIsProcessingEchoTransition || bIsTearingDown || !EchoDef)
 	{
 		return false;
 	}
@@ -49,7 +49,7 @@ bool UShadowSlaveEchoComponent::AddEchoSimple(UShadowSlaveEchoDefinition* EchoDe
 
 bool UShadowSlaveEchoComponent::AddEchoInstance(const FShadowSlaveEchoInstance& InInstance)
 {
-	if (bIsProcessingEchoTransition || !InInstance.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InInstance.IsValid())
 	{
 		return false;
 	}
@@ -69,7 +69,7 @@ bool UShadowSlaveEchoComponent::AddEchoInstance(const FShadowSlaveEchoInstance& 
 
 bool UShadowSlaveEchoComponent::RemoveEcho(const FGuid& InstanceId)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -117,7 +117,7 @@ bool UShadowSlaveEchoComponent::RemoveEchoByDefinition(const UShadowSlaveEchoDef
 
 bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -166,7 +166,7 @@ bool UShadowSlaveEchoComponent::DestroyEcho(const FGuid& InstanceId)
 
 void UShadowSlaveEchoComponent::ClearEchoes()
 {
-	if (bIsProcessingEchoTransition || Echoes.Num() == 0)
+	if (bIsProcessingEchoTransition || bIsTearingDown || Echoes.Num() == 0)
 	{
 		return;
 	}
@@ -199,7 +199,7 @@ void UShadowSlaveEchoComponent::ClearEchoes()
 
 void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInstance>& InInstances)
 {
-	if (bIsProcessingEchoTransition)
+	if (bIsProcessingEchoTransition || bIsTearingDown)
 	{
 		return;
 	}
@@ -243,7 +243,7 @@ void UShadowSlaveEchoComponent::RestoreEchoes(const TArray<FShadowSlaveEchoInsta
 
 bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId, AActor* InTransientActor)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -320,7 +320,7 @@ bool UShadowSlaveEchoComponent::SummonEcho(const FGuid& InstanceId, AActor* InTr
 
 bool UShadowSlaveEchoComponent::DismissEcho(const FGuid& InstanceId)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -364,7 +364,7 @@ bool UShadowSlaveEchoComponent::DismissEcho(const FGuid& InstanceId)
 
 bool UShadowSlaveEchoComponent::DismissAllEchoes()
 {
-	if (bIsProcessingEchoTransition)
+	if (bIsProcessingEchoTransition || bIsTearingDown)
 	{
 		return false;
 	}
@@ -386,7 +386,7 @@ bool UShadowSlaveEchoComponent::DismissAllEchoes()
 
 bool UShadowSlaveEchoComponent::SetSummonedActor(const FGuid& InstanceId, AActor* InTransientActor)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || !InTransientActor)
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid() || !InTransientActor)
 	{
 		return false;
 	}
@@ -446,7 +446,7 @@ AActor* UShadowSlaveEchoComponent::GetSummonedActor(const FGuid& InstanceId) con
 
 void UShadowSlaveEchoComponent::HandleSummonedActorDestroyed(AActor* DestroyedActor)
 {
-	if (!DestroyedActor || bIsProcessingEchoTransition)
+	if (!DestroyedActor || bIsProcessingEchoTransition || bIsTearingDown)
 	{
 		return;
 	}
@@ -473,7 +473,7 @@ void UShadowSlaveEchoComponent::HandleSummonedActorDestroyed(AActor* DestroyedAc
 
 bool UShadowSlaveEchoComponent::SetEchoState(const FGuid& InstanceId, EShadowSlaveEchoState NewState)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid())
 	{
 		return false;
 	}
@@ -518,7 +518,7 @@ bool UShadowSlaveEchoComponent::GetEchoState(const FGuid& InstanceId, EShadowSla
 
 bool UShadowSlaveEchoComponent::SetEchoDynamicProperty(const FGuid& InstanceId, FName Key, const FString& Value)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || Key.IsNone())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid() || Key.IsNone())
 	{
 		return false;
 	}
@@ -563,7 +563,7 @@ bool UShadowSlaveEchoComponent::GetEchoDynamicProperty(const FGuid& InstanceId, 
 
 bool UShadowSlaveEchoComponent::RemoveEchoDynamicProperty(const FGuid& InstanceId, FName Key)
 {
-	if (bIsProcessingEchoTransition || !InstanceId.IsValid() || Key.IsNone())
+	if (bIsProcessingEchoTransition || bIsTearingDown || !InstanceId.IsValid() || Key.IsNone())
 	{
 		return false;
 	}
@@ -731,6 +731,9 @@ TArray<FShadowSlaveEchoInstance> UShadowSlaveEchoComponent::GetEchoesByClass(ESh
 
 void UShadowSlaveEchoComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	TGuardValue<bool> TeardownGuard(bIsTearingDown, true);
+	TGuardValue<bool> TransitionGuard(bIsProcessingEchoTransition, true);
+
 	for (FShadowSlaveEchoInstance& Echo : Echoes)
 	{
 		if (Echo.TransientActor.IsValid())

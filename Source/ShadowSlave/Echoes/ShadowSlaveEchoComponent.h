@@ -264,9 +264,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "ShadowSlave|Echoes|Events")
 	FOnEchoCollectionChangedSignature OnEchoCollectionChanged;
 
-protected:
+public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+protected:
 	/** Collection of runtime Echo instances owned authoritatively by this component */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ShadowSlave|Echoes|State")
 	TArray<FShadowSlaveEchoInstance> Echoes;
@@ -279,4 +280,11 @@ private:
 	 * See the REENTRANCY CONTRACT in the class docstring above.
 	 */
 	bool bIsProcessingEchoTransition = false;
+
+	/**
+	 * Teardown guard flag. Set to true during EndPlay / component destruction.
+	 * Prevents teardown from executing gameplay Dismiss operations, firing gameplay events,
+	 * or allowing OnDestroyed callbacks from mutating the Echo collection during destruction.
+	 */
+	bool bIsTearingDown = false;
 };

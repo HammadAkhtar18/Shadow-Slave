@@ -667,4 +667,56 @@ bool FShadowSlaveEchoReentrancyDuringDismissRejectedTest::RunTest(const FString&
 	return true;
 }
 
+// 14. Required Test: Echo.TeardownDoesNotTriggerGameplayDismiss
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoTeardownDoesNotTriggerGameplayDismissTest,
+	"ShadowSlave.Echoes.TeardownDoesNotTriggerGameplayDismiss",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoTeardownDoesNotTriggerGameplayDismissTest::RunTest(const FString& Parameters)
+{
+	FShadowSlaveEchoTestFixture Fixture;
+	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize());
+
+	FShadowSlaveEchoInstance Echo;
+	TestTrue(TEXT("Acquire Echo"), Fixture.EchoComp->AcquireEcho(Fixture.EchoDef, Echo));
+
+	AActor* SpawnedPawn = NewObject<AShadowSlavePlayerCharacter>(Fixture.Player);
+	TestNotNull(TEXT("Spawned representation must be valid"), SpawnedPawn);
+
+	TestTrue(TEXT("SummonEcho with transient actor"), Fixture.EchoComp->SummonEcho(Echo.InstanceId, SpawnedPawn));
+	TestTrue(TEXT("Echo must be summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	// Track whether any gameplay events fire during teardown
+	bool bDismissFired = false;
+	bool bStateChangedFired = false;
+	bool bCollectionChangedFired = false;
+	bool bRemovedFired = false;
+
+	Fixture.EchoComp->OnEchoDismissed.AddLambda([&](const FShadowSlaveEchoInstance&) { bDismissFired = true; });
+	Fixture.EchoComp->OnEchoStateChanged.AddLambda([&](const FShadowSlaveEchoInstance&, EShadowSlaveEchoState, EShadowSlaveEchoState) { bStateChangedFired = true; });
+	Fixture.EchoComp->OnEchoCollectionChanged.AddLambda([&]() { bCollectionChangedFired = true; });
+	Fixture.EchoComp->OnEchoRemoved.AddLambda([&](const FShadowSlaveEchoInstance&) { bRemovedFired = true; });
+
+	// Execute component EndPlay teardown
+	Fixture.EchoComp->EndPlay(EEndPlayReason::Destroyed);
+
+	// Invariant: Teardown must NOT broadcast normal gameplay events
+	TestFalse(TEXT("OnEchoDismissed must NOT fire during EndPlay teardown"), bDismissFired);
+	TestFalse(TEXT("OnEchoStateChanged must NOT fire during EndPlay teardown"), bStateChangedFired);
+	TestFalse(TEXT("OnEchoCollectionChanged must NOT fire during EndPlay teardown"), bCollectionChangedFired);
+	TestFalse(TEXT("OnEchoRemoved must NOT fire during EndPlay teardown"), bRemovedFired);
+
+	// Invariant: Transient actor is safely cleared
+	TestNull(TEXT("Transient actor pointer must be cleared after teardown"), Fixture.EchoComp->GetSummonedActor(Echo.InstanceId));
+	TestFalse(TEXT("Echo must not remain summoned"), Fixture.EchoComp->IsEchoSummoned(Echo.InstanceId));
+
+	// Invariant: Echo ownership is NOT lost during teardown
+	TestEqual(TEXT("Echo count must still be 1 (ownership preserved during teardown)"), Fixture.EchoComp->GetEchoCount(), 1);
+	TestTrue(TEXT("Echo remains owned by instance ID"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	return true;
+}
+
 #endif // WITH_AUTOMATION_TESTS
