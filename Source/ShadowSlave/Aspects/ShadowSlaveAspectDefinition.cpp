@@ -24,7 +24,7 @@ UShadowSlaveAspectAbilityDefinition* UShadowSlaveAspectDefinition::FindAbilityBy
 
 	for (const TObjectPtr<UShadowSlaveAspectAbilityDefinition>& AbilityDef : AbilityDefinitions)
 	{
-		if (AbilityDef && AbilityDef->AbilityId == AbilityId)
+		if (AbilityDef && AbilityDef->GetAbilityId() == AbilityId)
 		{
 			return AbilityDef.Get();
 		}
