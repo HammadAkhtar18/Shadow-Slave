@@ -72,32 +72,31 @@ bool FShadowSlaveMemoryDefinitionHasSingleAuthoritativeIdTest::RunTest(const FSt
 	UShadowSlaveMemoryDefinition* Def = NewObject<UShadowSlaveMemoryDefinition>();
 	TestNotNull(TEXT("Memory definition must be instantiable"), Def);
 
-	// Initial state: both are NAME_None
+	// 1. ContentId is the only stored authoritative ID; initially NAME_None
 	TestTrue(TEXT("ContentId initially None"), Def->ContentId.IsNone());
-	TestTrue(TEXT("MemoryId initially None"), Def->MemoryId.IsNone());
 	TestTrue(TEXT("GetMemoryId() initially None"), Def->GetMemoryId().IsNone());
 
-	// Mutating via MemoryId modifies ContentId and GetMemoryId()
-	const FName IdA(TEXT("Memory_Alpha"));
-	Def->MemoryId = IdA;
-	TestEqual(TEXT("ContentId must match MemoryId when set via MemoryId"), Def->ContentId, IdA);
-	TestEqual(TEXT("GetMemoryId() must match when set via MemoryId"), Def->GetMemoryId(), IdA);
+	// Verify MemoryId is not a stored UPROPERTY, while ContentId is
+	TestNull(TEXT("MemoryId must not be a stored UPROPERTY on UShadowSlaveMemoryDefinition"),
+		UShadowSlaveMemoryDefinition::StaticClass()->FindPropertyByName(TEXT("MemoryId")));
+	TestNotNull(TEXT("ContentId must be a stored UPROPERTY on UShadowSlaveMemoryDefinition"),
+		UShadowSlaveMemoryDefinition::StaticClass()->FindPropertyByName(TEXT("ContentId")));
 
-	// Mutating via ContentId modifies MemoryId and GetMemoryId()
-	const FName IdB(TEXT("Memory_Beta"));
-	Def->ContentId = IdB;
-	TestEqual(TEXT("MemoryId must match ContentId when set via ContentId"), Def->MemoryId, IdB);
-	TestEqual(TEXT("GetMemoryId() must match when set via ContentId"), Def->GetMemoryId(), IdB);
+	// 2. GetMemoryId() returns ContentId
+	const FName IdA(TEXT("Memory_Authoritative_A"));
+	Def->ContentId = IdA;
+	TestEqual(TEXT("GetMemoryId() must return ContentId"), Def->GetMemoryId(), IdA);
 
-	// Mutating via SetMemoryId modifies ContentId and MemoryId
-	const FName IdC(TEXT("Memory_Gamma"));
-	Def->SetMemoryId(IdC);
-	TestEqual(TEXT("ContentId must match when set via SetMemoryId"), Def->ContentId, IdC);
-	TestEqual(TEXT("MemoryId must match when set via SetMemoryId"), Def->MemoryId, IdC);
-	TestEqual(TEXT("GetMemoryId() must match when set via SetMemoryId"), Def->GetMemoryId(), IdC);
+	// 3. SetMemoryId() changes ContentId
+	const FName IdB(TEXT("Memory_Authoritative_B"));
+	Def->SetMemoryId(IdB);
+	TestEqual(TEXT("ContentId must be updated by SetMemoryId()"), Def->ContentId, IdB);
+	TestEqual(TEXT("GetMemoryId() must reflect SetMemoryId() update"), Def->GetMemoryId(), IdB);
 
-	// Verify reference identity: MemoryId is physically bound to ContentId
-	TestEqual(TEXT("MemoryId reference points to ContentId address"), &Def->MemoryId, &Def->ContentId);
+	// 4. Changing ContentId is reflected by GetMemoryId()
+	const FName IdC(TEXT("Memory_Authoritative_C"));
+	Def->ContentId = IdC;
+	TestEqual(TEXT("GetMemoryId() must reflect direct ContentId change"), Def->GetMemoryId(), IdC);
 
 	return true;
 }

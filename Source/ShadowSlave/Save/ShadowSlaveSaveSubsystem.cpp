@@ -604,7 +604,7 @@ void UShadowSlaveSaveSubsystem::CaptureMemories(UShadowSlaveMemoryComponent* Mem
 		{
 			FShadowSlaveMemorySaveData MemData;
 			MemData.InstanceId = Mem.InstanceId;
-			MemData.MemoryId = Mem.MemoryDefinition ? Mem.MemoryDefinition->MemoryId : NAME_None;
+			MemData.MemoryId = Mem.MemoryDefinition ? Mem.MemoryDefinition->GetMemoryId() : NAME_None;
 			MemData.MemoryPrimaryAssetId = Mem.MemoryDefinition ? Mem.MemoryDefinition->GetPrimaryAssetId() : FPrimaryAssetId();
 			MemData.State = Mem.State;
 			MemData.bIsEquipped = Mem.bIsEquipped;

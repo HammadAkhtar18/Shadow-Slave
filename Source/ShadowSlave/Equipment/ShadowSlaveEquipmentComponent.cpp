@@ -339,8 +339,8 @@ bool UShadowSlaveEquipmentComponent::EquipMemory(const FGuid& InstanceId, EShado
 		OnEquipmentItemUnequipped.Broadcast(TargetSlot, OldTargetOccupant);
 	}
 
-	const FName DefId = MemInstance.MemoryDefinition->MemoryId != NAME_None
-		? MemInstance.MemoryDefinition->MemoryId
+	const FName DefId = MemInstance.MemoryDefinition->GetMemoryId() != NAME_None
+		? MemInstance.MemoryDefinition->GetMemoryId()
 		: MemInstance.MemoryDefinition->GetFName();
 
 	FShadowSlaveEquippedItem NewEquipped(TargetSlot, EShadowSlaveEquipmentSourceType::Memory, InstanceId, DefId);

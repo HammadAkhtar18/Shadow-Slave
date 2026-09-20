@@ -20,8 +20,8 @@ class UShadowSlaveItemDefinition;
  * ARCHITECTURAL PRINCIPLES:
  * 1. Specialized Content Definition: Inherits common metadata (ContentId, DisplayName, Description,
  *    Version, MetadataTags, ProvenanceNote) from UShadowSlaveContentDefinition.
- * 2. Single Authoritative ID: ContentId is the single authoritative identifier. MemoryId is preserved
- *    as a compatibility view/accessor and direct reference alias that cannot diverge from ContentId.
+ * 2. Single Authoritative ID: ContentId is the single authoritative stored identifier. Backwards
+ *    compatibility is provided through GetMemoryId() and SetMemoryId() accessors only.
  * 3. Content Type: Statically identified as EShadowSlaveContentType::Memory.
  * 4. Memory-Specific Data: Owns verified canon classifications (Rank, Tier), static enchantments,
  *    and usage parameters.
@@ -61,13 +61,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memory|Identity")
 	void SetMemoryId(FName InMemoryId) { ContentId = InMemoryId; }
-
-	/**
-	 * Direct reference compatibility alias to the single authoritative ContentId.
-	 * Ensures existing C++ call sites accessing MemoryId directly continue to compile
-	 * and are physically guaranteed never to diverge from ContentId.
-	 */
-	FName& MemoryId = ContentId;
 
 	/* --- Canon & Technical Classification --- */
 

@@ -61,7 +61,6 @@ bool FShadowSlaveMemoryInstance::RemoveDynamicProperty(FName Key)
 
 UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
 	: UShadowSlaveContentDefinition()
-	, MemoryId(ContentId)
 {
 	ContentId = NAME_None;
 	ContentType = EShadowSlaveContentType::Memory;
@@ -136,7 +135,7 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateTestMemoryDefi
 	UShadowSlaveMemoryDefinition* TestDef = NewObject<UShadowSlaveMemoryDefinition>(EffectiveOuter, FName(TEXT("TestMemoryDefinition")));
 	if (TestDef)
 	{
-		TestDef->MemoryId = FName(TEXT("Test_GenericMemory"));
+		TestDef->ContentId = FName(TEXT("Test_GenericMemory"));
 		TestDef->DisplayName = FText::FromString(TEXT("Generic Test Memory"));
 		TestDef->Description = FText::FromString(TEXT("A generic development memory asset for verifying Rank, Tier, multiple enchantments, and lifecycle operations."));
 		TestDef->Rank = EShadowSlaveMemoryRank::Awakened;
@@ -181,7 +180,7 @@ UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateCanonMemoryDef
 		return nullptr;
 	}
 
-	Def->MemoryId = CanonMemoryId;
+	Def->ContentId = CanonMemoryId;
 
 	if (CanonMemoryId == FName(TEXT("PuppeteersShroud")))
 	{
