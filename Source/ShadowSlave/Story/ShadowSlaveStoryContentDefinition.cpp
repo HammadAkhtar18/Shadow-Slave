@@ -3,13 +3,51 @@
 #include "Story/ShadowSlaveStoryContentDefinition.h"
 
 UShadowSlaveStoryContentDefinition::UShadowSlaveStoryContentDefinition()
+	: UShadowSlaveContentDefinition()
 {
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Story;
+	DisplayName = FText::FromString(TEXT("Story Arc"));
+	Description = FText::GetEmpty();
 	Version = 1;
 }
 
 FPrimaryAssetId UShadowSlaveStoryContentDefinition::GetPrimaryAssetId() const
 {
-	return FPrimaryAssetId(TEXT("ShadowSlaveStoryContent"), StoryContentId.IsNone() ? GetFName() : StoryContentId);
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveStoryContentDefinition::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content type validation: must be Story
+	if (ContentType != EShadowSlaveContentType::Story)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Story content definition '%s' must have ContentType == EShadowSlaveContentType::Story."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Story-specific validation
+	TArray<FText> StoryErrors;
+	if (!ValidateDefinition(StoryErrors))
+	{
+		if (OutErrorMessage && StoryErrors.Num() > 0)
+		{
+			*OutErrorMessage = StoryErrors[0].ToString();
+		}
+		return false;
+	}
+
+	return true;
 }
 
 const FShadowSlaveStoryContentEntry* UShadowSlaveStoryContentDefinition::FindContentEntry(FName InContentId) const
@@ -57,14 +95,19 @@ bool UShadowSlaveStoryContentDefinition::ValidateDefinition(TArray<FText>& OutEr
 {
 	OutErrors.Empty();
 
-	if (StoryContentId.IsNone())
+	if (ContentId.IsNone())
 	{
-		OutErrors.Add(NSLOCTEXT("ShadowSlave", "StoryContentDef_MissingId", "StoryContentId is None; a valid unique FName is required."));
+		OutErrors.Add(NSLOCTEXT("ShadowSlave", "StoryContentDef_MissingId", "ContentId is None; a valid unique FName is required."));
 	}
 
 	if (Version < 1)
 	{
 		OutErrors.Add(NSLOCTEXT("ShadowSlave", "StoryContentDef_InvalidVersion", "Version must be at least 1."));
+	}
+
+	if (ContentType != EShadowSlaveContentType::Story)
+	{
+		OutErrors.Add(NSLOCTEXT("ShadowSlave", "StoryContentDef_InvalidContentType", "ContentType must be EShadowSlaveContentType::Story."));
 	}
 
 	// Arc-level prerequisites validation
@@ -75,11 +118,11 @@ bool UShadowSlaveStoryContentDefinition::ValidateDefinition(TArray<FText>& OutEr
 		{
 			OutErrors.Add(NSLOCTEXT("ShadowSlave", "StoryContentDef_NonePrereq", "Prerequisite list contains an empty or None identifier."));
 		}
-		else if (PrereqId == StoryContentId)
+		else if (PrereqId == ContentId)
 		{
 			OutErrors.Add(FText::Format(
 				NSLOCTEXT("ShadowSlave", "StoryContentDef_SelfPrereq", "Story content '{0}' cannot list itself as a prerequisite."),
-				FText::FromName(StoryContentId)
+				FText::FromName(ContentId)
 			));
 		}
 		else if (SeenPrerequisites.Contains(PrereqId))

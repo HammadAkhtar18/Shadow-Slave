@@ -8,7 +8,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveCombatTests.cpp        # Combat state machine, transitions, death terminality, attack/dodge validation
 ├── ShadowSlaveInventoryTests.cpp     # Inventory capacity, stacking, atomic removal, GUID lookup, clearing
 ├── ShadowSlaveQuestTests.cpp         # Quest registration, duplicate rejection, prerequisites, objective progress invariants
-├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation
+├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation, and content pipeline integration
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, teardown safety, and content pipeline integration
@@ -26,6 +26,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Inventory.*`
 - `ShadowSlave.Quest.*`
 - `ShadowSlave.Story.*`
+- `ShadowSlave.StoryContent.*`
 - `ShadowSlave.Dialogue.*`
 - `ShadowSlave.Aspects.*`
 - `ShadowSlave.Echoes.*`

@@ -1043,7 +1043,8 @@ bool UShadowSlaveStorySubsystem::RegisterStoryContentDefinition(UShadowSlaveStor
 		return false;
 	}
 
-	if (ContentDef->StoryContentId.IsNone())
+	const FName ContentId = ContentDef->GetStoryContentId();
+	if (ContentId.IsNone())
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryContentDefinition - ContentDef has invalid None StoryContentId."));
 		return false;
@@ -1055,12 +1056,12 @@ bool UShadowSlaveStorySubsystem::RegisterStoryContentDefinition(UShadowSlaveStor
 		for (const FText& Err : ValidationErrors)
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryContentDefinition - Validation failure on '%s': %s"),
-				*ContentDef->StoryContentId.ToString(), *Err.ToString());
+				*ContentId.ToString(), *Err.ToString());
 		}
 		return false;
 	}
 
-	if (const TObjectPtr<UShadowSlaveStoryContentDefinition>* Existing = RegisteredContentDefinitions.Find(ContentDef->StoryContentId))
+	if (const TObjectPtr<UShadowSlaveStoryContentDefinition>* Existing = RegisteredContentDefinitions.Find(ContentId))
 	{
 		if (Existing->Get() == ContentDef)
 		{
@@ -1069,24 +1070,24 @@ bool UShadowSlaveStorySubsystem::RegisterStoryContentDefinition(UShadowSlaveStor
 		}
 
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryContentDefinition - Conflict: StoryContentId '%s' already registered with different definition object ('%s' vs '%s')."),
-			*ContentDef->StoryContentId.ToString(),
+			*ContentId.ToString(),
 			Existing->Get() ? *Existing->Get()->GetName() : TEXT("null"),
 			*ContentDef->GetName());
 		return false;
 	}
 
-	RegisteredContentDefinitions.Add(ContentDef->StoryContentId, ContentDef);
+	RegisteredContentDefinitions.Add(ContentId, ContentDef);
 
 	// If runtime state does not exist yet, initialize it
-	if (!StoryContentRuntimeStates.Contains(ContentDef->StoryContentId))
+	if (!StoryContentRuntimeStates.Contains(ContentId))
 	{
-		const EShadowSlaveStoryContentState InitialState = AreStoryContentPrerequisitesSatisfied(ContentDef->StoryContentId)
+		const EShadowSlaveStoryContentState InitialState = AreStoryContentPrerequisitesSatisfied(ContentId)
 			? EShadowSlaveStoryContentState::Available
 			: EShadowSlaveStoryContentState::Locked;
 
-		FShadowSlaveStoryContentRuntimeState NewEntry(ContentDef->StoryContentId, InitialState);
+		FShadowSlaveStoryContentRuntimeState NewEntry(ContentId, InitialState);
 		InitializeRuntimeContentEntries(NewEntry, ContentDef);
-		StoryContentRuntimeStates.Add(ContentDef->StoryContentId, NewEntry);
+		StoryContentRuntimeStates.Add(ContentId, NewEntry);
 	}
 
 	return true;

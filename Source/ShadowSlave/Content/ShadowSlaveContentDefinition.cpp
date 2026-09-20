@@ -36,7 +36,7 @@ FPrimaryAssetId UShadowSlaveContentDefinition::GetPrimaryAssetId() const
 		TypeName = TEXT("ContentDialogue");
 		break;
 	case EShadowSlaveContentType::Story:
-		TypeName = TEXT("ContentStory");
+		TypeName = TEXT("Story");
 		break;
 	case EShadowSlaveContentType::Ability:
 		TypeName = TEXT("ContentAbility");
