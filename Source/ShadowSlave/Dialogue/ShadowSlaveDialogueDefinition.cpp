@@ -3,8 +3,10 @@
 #include "Dialogue/ShadowSlaveDialogueDefinition.h"
 
 UShadowSlaveDialogueDefinition::UShadowSlaveDialogueDefinition()
+	: UShadowSlaveContentDefinition()
 {
-	DialogueId = NAME_None;
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Dialogue;
 	DisplayName = FText::FromString(TEXT("Dialogue Definition"));
 	Description = FText::GetEmpty();
 	StartingNodeId = NAME_None;
@@ -13,8 +15,51 @@ UShadowSlaveDialogueDefinition::UShadowSlaveDialogueDefinition()
 
 FPrimaryAssetId UShadowSlaveDialogueDefinition::GetPrimaryAssetId() const
 {
-	const FName AssetName = DialogueId.IsNone() ? GetFName() : DialogueId;
-	return FPrimaryAssetId(TEXT("ShadowSlaveDialogue"), AssetName);
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveDialogueDefinition::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Base generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content type must be Dialogue
+	if (ContentType != EShadowSlaveContentType::Dialogue)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Dialogue definition '%s' must have ContentType == EShadowSlaveContentType::Dialogue."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Generic display name must not be empty
+	if (DisplayName.IsEmpty())
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Dialogue definition '%s' must have a non-empty DisplayName."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 4. Graph structure validation
+	TArray<FText> GraphErrors;
+	if (!ValidateDefinition(GraphErrors))
+	{
+		if (OutErrorMessage && GraphErrors.Num() > 0)
+		{
+			*OutErrorMessage = GraphErrors[0].ToString();
+		}
+		return false;
+	}
+
+	return true;
 }
 
 const FShadowSlaveDialogueNode* UShadowSlaveDialogueDefinition::FindNode(FName InNodeId) const
@@ -52,7 +97,7 @@ bool UShadowSlaveDialogueDefinition::ValidateDefinition(TArray<FText>& OutErrors
 {
 	OutErrors.Empty();
 
-	if (DialogueId.IsNone())
+	if (ContentId.IsNone())
 	{
 		OutErrors.Add(NSLOCTEXT("ShadowSlave", "DialogueError_MissingId", "DialogueId is empty or NAME_None."));
 	}
@@ -185,7 +230,8 @@ UShadowSlaveDialogueDefinition* UShadowSlaveDialogueDefinition::CreateTestDialog
 	UObject* EffectiveOuter = Outer ? Outer : GetTransientPackage();
 	UShadowSlaveDialogueDefinition* NewDef = NewObject<UShadowSlaveDialogueDefinition>(EffectiveOuter);
 
-	NewDef->DialogueId = FName(TEXT("Test_Dialogue_Generic"));
+	NewDef->ContentId = FName(TEXT("Test_Dialogue_Generic"));
+	NewDef->ContentType = EShadowSlaveContentType::Dialogue;
 	NewDef->DisplayName = FText::FromString(TEXT("Generic Test Dialogue"));
 	NewDef->Description = FText::FromString(TEXT("A prototype branching dialogue definition for automated testing."));
 	NewDef->StartingNodeId = FName(TEXT("Node_Greeting"));

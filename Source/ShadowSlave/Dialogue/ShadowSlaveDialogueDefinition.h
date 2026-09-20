@@ -3,17 +3,33 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Dialogue/ShadowSlaveDialogueTypes.h"
 #include "ShadowSlaveDialogueDefinition.generated.h"
 
 /**
  * Data-driven primary data asset describing immutable dialogue graphs and conversation trees.
+ * Derived from UShadowSlaveContentDefinition as part of the generic static content pipeline.
  * Cleanly separates static dialogue content from mutable runtime conversation state.
  * Contains zero hardcoded canon characters or story branches.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. Specialized Content Definition: Inherits common metadata (ContentId, DisplayName, Description,
+ *    Version, MetadataTags, ProvenanceNote) from UShadowSlaveContentDefinition.
+ * 2. Single Authoritative ID: ContentId is the single authoritative stored identifier. Backwards
+ *    compatibility is provided through GetDialogueId() and SetDialogueId() accessors only.
+ * 3. Content Type Separation:
+ *    - Generic ContentType is statically EShadowSlaveContentType::Dialogue, identifying this asset as
+ *      a dialogue definition within the generic content pipeline.
+ *    - Dialogue-specific taxonomy (nodes, choices, conditions, consequences) remains separate and authoritative.
+ * 4. Dialogue-Specific Data: Owns starting node ID, dialogue node graph, and technical metadata.
+ * 5. Runtime Separation: Cleanly separates immutable dialogue definitions from mutable runtime conversation
+ *    state (managed by UShadowSlaveConversationSubsystem).
+ * 6. Static Infrastructure: Participates in UShadowSlaveContentRegistrySubsystem for static definition
+ *    lookup only; the registry does not manage active conversation sessions.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveDialogueDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveDialogueDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -22,27 +38,32 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/* --- Identification & Meta --- */
+	/**
+	 * Validates definition configuration.
+	 * Combines generic content definition validation with dialogue graph structural checks.
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Stable unique technical identifier for this dialogue asset */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Identity")
-	FName DialogueId = NAME_None;
+	/* --- Identity Compatibility --- */
 
-	/** Human-readable title of this dialogue */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Identity")
-	FText DisplayName;
+	/**
+	 * Returns the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Dialogue API.
+	 */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Dialogue|Identity")
+	FName GetDialogueId() const { return ContentId; }
 
-	/** Internal summary or designer notes */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Identity", meta = (MultiLine = true))
-	FText Description;
+	/**
+	 * Sets the single authoritative stable content identifier (ContentId).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Dialogue|Identity")
+	void SetDialogueId(FName InDialogueId) { ContentId = InDialogueId; }
+
+	/* --- Dialogue Flow & Content --- */
 
 	/** Initial node to display when this conversation starts */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Flow")
 	FName StartingNodeId = NAME_None;
-
-	/** Content version number for migration and compatibility tracking */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Flow", meta = (ClampMin = "1"))
-	int32 Version = 1;
 
 	/** Complete collection of dialogue nodes constituting this conversation */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Dialogue|Content")

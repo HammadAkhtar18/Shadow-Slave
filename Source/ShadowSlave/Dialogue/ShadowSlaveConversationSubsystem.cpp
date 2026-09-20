@@ -86,7 +86,7 @@ bool UShadowSlaveConversationSubsystem::StartConversation(UShadowSlaveDialogueDe
 	if (IsConversationActive())
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("StartConversation: Another conversation is already active. Current Dialogue: '%s'."),
-			ActiveDialogueDef ? *ActiveDialogueDef->DialogueId.ToString() : TEXT("None"));
+			ActiveDialogueDef ? *ActiveDialogueDef->GetDialogueId().ToString() : TEXT("None"));
 		return false;
 	}
 
@@ -100,7 +100,7 @@ bool UShadowSlaveConversationSubsystem::StartConversation(UShadowSlaveDialogueDe
 	if (!DialogueDef->ValidateDefinition(ValidationErrors))
 	{
 		UE_LOG(LogShadowSlave, Error, TEXT("StartConversation: Dialogue '%s' failed validation with %d error(s)."),
-			*DialogueDef->DialogueId.ToString(), ValidationErrors.Num());
+			*DialogueDef->GetDialogueId().ToString(), ValidationErrors.Num());
 		for (const FText& Err : ValidationErrors)
 		{
 			UE_LOG(LogShadowSlave, Error, TEXT("  - %s"), *Err.ToString());
@@ -294,7 +294,7 @@ bool UShadowSlaveConversationSubsystem::AbortConversation()
 	}
 
 	const FName LastNodeId = CurrentNodeId;
-	const FName DialogId = ActiveDialogueDef ? ActiveDialogueDef->DialogueId : NAME_None;
+	const FName DialogId = ActiveDialogueDef ? ActiveDialogueDef->GetDialogueId() : NAME_None;
 
 	CurrentState = EShadowSlaveConversationState::Aborted;
 	OnConversationAborted.Broadcast(DialogId, LastNodeId);
@@ -305,7 +305,7 @@ bool UShadowSlaveConversationSubsystem::AbortConversation()
 
 void UShadowSlaveConversationSubsystem::CompleteConversation()
 {
-	const FName DialogId = ActiveDialogueDef ? ActiveDialogueDef->DialogueId : NAME_None;
+	const FName DialogId = ActiveDialogueDef ? ActiveDialogueDef->GetDialogueId() : NAME_None;
 
 	CurrentState = EShadowSlaveConversationState::Completed;
 	OnConversationCompleted.Broadcast(DialogId);

@@ -344,7 +344,7 @@ bool UShadowSlaveGameplaySubsystem::BeginDialogue(UShadowSlaveDialogueDefinition
 	if (!bStarted)
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginDialogue - ConversationSubsystem rejected StartConversation for '%s'."),
-			*DialogueDef->DialogueId.ToString());
+			*DialogueDef->GetDialogueId().ToString());
 		RequestFlowStateTransition(StateBeforeDialogue);
 		return false;
 	}
