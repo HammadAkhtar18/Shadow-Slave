@@ -470,7 +470,7 @@ void UShadowSlaveSaveSubsystem::CaptureAspect(UShadowSlaveAspectComponent* Aspec
 
 	if (UShadowSlaveAspectDefinition* AspectDef = AspectComp->GetAspectDefinition())
 	{
-		OutData.AspectId = AspectDef->AspectId;
+		OutData.AspectId = AspectDef->GetAspectId();
 		OutData.AspectAssetId = AspectDef->GetPrimaryAssetId();
 	}
 

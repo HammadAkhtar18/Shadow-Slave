@@ -48,7 +48,7 @@ namespace
 			Ability->SetAbilityId(FName(TEXT("Test_GenericAbility")));
 			Ability->BaseEssenceCost = EssenceCost;
 			Ability->RequiredCharacterRank = RequiredRank;
-			AspectDefinition->AspectId = FName(TEXT("Test_GenericAspect"));
+			AspectDefinition->SetAspectId(FName(TEXT("Test_GenericAspect")));
 			AspectDefinition->AbilityDefinitions.Add(Ability);
 
 			return Aspect->SetAspectDefinition(AspectDefinition);
@@ -398,7 +398,7 @@ bool FShadowSlaveAbilityDefinitionExistingRuntimeCompatibilityTest::RunTest(cons
 	AbilityDef->RequiredCharacterRank = EShadowSlaveCharacterRank::Awakened;
 
 	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>(Player);
-	AspectDef->AspectId = FName(TEXT("Compat_Runtime_Aspect"));
+	AspectDef->SetAspectId(FName(TEXT("Compat_Runtime_Aspect")));
 	AspectDef->AbilityDefinitions.Add(AbilityDef);
 
 	TestTrue(TEXT("SetAspectDefinition must succeed"), Aspect->SetAspectDefinition(AspectDef));
@@ -686,7 +686,7 @@ bool FShadowSlaveFlawDefinitionExistingRuntimeCompatibilityTest::RunTest(const F
 	FlawDef->Version = 1;
 
 	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>(Player);
-	AspectDef->AspectId = FName(TEXT("Compat_Flaw_Aspect"));
+	AspectDef->SetAspectId(FName(TEXT("Compat_Flaw_Aspect")));
 	AspectDef->FlawDefinition = FlawDef;
 
 	// 1. Aspect assignment binds the Flaw
@@ -714,6 +714,330 @@ bool FShadowSlaveFlawDefinitionExistingRuntimeCompatibilityTest::RunTest(const F
 
 	// 4. Aspect replacement clears or replaces Flaw
 	TestTrue(TEXT("Removing Aspect clears Flaw"), Aspect->SetAspectDefinition(nullptr));
+	TestNull(TEXT("Active Flaw is null after Aspect removal"), Aspect->GetFlawDefinition());
+
+	return true;
+}
+
+// =============================================================================
+// Step 50: Aspect Definition Content Pipeline Integration Tests
+// =============================================================================
+
+// 1. DefinitionUsesGenericContentBase Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionUsesGenericContentBaseTest,
+	"ShadowSlave.AspectDefinition.DefinitionUsesGenericContentBase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionUsesGenericContentBaseTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>();
+	TestNotNull(TEXT("Aspect definition must instantiate"), AspectDef);
+
+	// 1. Inheritance verification
+	TestTrue(TEXT("Aspect definition must be a UShadowSlaveContentDefinition"),
+		AspectDef->IsA(UShadowSlaveContentDefinition::StaticClass()));
+
+	UShadowSlaveContentDefinition* BaseDef = Cast<UShadowSlaveContentDefinition>(AspectDef);
+	TestNotNull(TEXT("Cast to UShadowSlaveContentDefinition must succeed"), BaseDef);
+
+	// 2. Generic content properties inherited and accessible
+	AspectDef->ContentId = FName(TEXT("Test_Generic_Aspect"));
+	AspectDef->DisplayName = FText::FromString(TEXT("Generic Test Aspect"));
+	AspectDef->Description = FText::FromString(TEXT("Test description for aspect content pipeline."));
+	AspectDef->Version = 2;
+	AspectDef->ProvenanceNote = TEXT("Test Provenance Note");
+
+	TestEqual(TEXT("Base ContentId matches"), BaseDef->ContentId, FName(TEXT("Test_Generic_Aspect")));
+	TestEqual(TEXT("Base DisplayName matches"), BaseDef->DisplayName.ToString(), TEXT("Generic Test Aspect"));
+	TestEqual(TEXT("Base Description matches"), BaseDef->Description.ToString(), TEXT("Test description for aspect content pipeline."));
+	TestEqual(TEXT("Base Version matches"), BaseDef->Version, 2);
+	TestEqual(TEXT("Base ProvenanceNote matches"), BaseDef->ProvenanceNote, TEXT("Test Provenance Note"));
+	TestEqual(TEXT("Base ContentType is Custom"), BaseDef->ContentType, EShadowSlaveContentType::Custom);
+
+	return true;
+}
+
+// 2. DefinitionUsesCustomContentType Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionUsesCustomContentTypeTest,
+	"ShadowSlave.AspectDefinition.DefinitionUsesCustomContentType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionUsesCustomContentTypeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>();
+	TestNotNull(TEXT("Aspect definition must instantiate"), AspectDef);
+
+	// 1. Top-level generic content type must default to Custom
+	TestEqual(TEXT("Default ContentType must be EShadowSlaveContentType::Custom"),
+		AspectDef->ContentType, EShadowSlaveContentType::Custom);
+
+	// 2. Verify no dedicated Aspect generic enum value exists in EShadowSlaveContentType
+	TestTrue(TEXT("ContentType is not Ability"), AspectDef->ContentType != EShadowSlaveContentType::Ability);
+	TestTrue(TEXT("ContentType is not Item"), AspectDef->ContentType != EShadowSlaveContentType::Item);
+	TestTrue(TEXT("ContentType is not Memory"), AspectDef->ContentType != EShadowSlaveContentType::Memory);
+	TestTrue(TEXT("ContentType is not Echo"), AspectDef->ContentType != EShadowSlaveContentType::Echo);
+	TestTrue(TEXT("ContentType is not Story"), AspectDef->ContentType != EShadowSlaveContentType::Story);
+
+	// 3. Verify Aspect-specific fields exist and are separate from generic ContentType
+	AspectDef->AspectRank = EShadowSlaveAspectRank::Divine;
+	AspectDef->Metadata.Add(FName(TEXT("Domain")), TEXT("Shadow"));
+	AspectDef->CanonProvenance = TEXT("Test Canon Provenance");
+	TestEqual(TEXT("AspectRank is Divine"), AspectDef->AspectRank, EShadowSlaveAspectRank::Divine);
+	TestTrue(TEXT("HasKnownAspectRank is true"), AspectDef->HasKnownAspectRank());
+	TestTrue(TEXT("Metadata contains Domain"), AspectDef->Metadata.Contains(FName(TEXT("Domain"))));
+	TestEqual(TEXT("CanonProvenance matches"), AspectDef->CanonProvenance, TEXT("Test Canon Provenance"));
+	TestEqual(TEXT("ContentType remains Custom after mutating Aspect-specific fields"),
+		AspectDef->ContentType, EShadowSlaveContentType::Custom);
+
+	return true;
+}
+
+// 3. DefinitionHasSingleAuthoritativeId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionHasSingleAuthoritativeIdTest,
+	"ShadowSlave.AspectDefinition.DefinitionHasSingleAuthoritativeId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionHasSingleAuthoritativeIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>();
+	TestNotNull(TEXT("Aspect definition must instantiate"), AspectDef);
+
+	// 1. Initial state: ContentId is NAME_None, GetAspectId() returns NAME_None
+	TestEqual(TEXT("Initial ContentId is NAME_None"), AspectDef->ContentId, NAME_None);
+	TestEqual(TEXT("Initial GetAspectId() returns NAME_None"), AspectDef->GetAspectId(), NAME_None);
+
+	// 2. Set ContentId directly -> GetAspectId() must return the same ID
+	const FName Id1(TEXT("Aspect_Authoritative_01"));
+	AspectDef->ContentId = Id1;
+	TestEqual(TEXT("GetAspectId() returns authoritative ContentId"), AspectDef->GetAspectId(), Id1);
+
+	// 3. Set via SetAspectId() -> ContentId must be updated
+	const FName Id2(TEXT("Aspect_Authoritative_02"));
+	AspectDef->SetAspectId(Id2);
+	TestEqual(TEXT("ContentId reflects SetAspectId()"), AspectDef->ContentId, Id2);
+	TestEqual(TEXT("GetAspectId() reflects SetAspectId()"), AspectDef->GetAspectId(), Id2);
+
+	// 4. Verification that GetPrimaryAssetId() uses authoritative ContentId and specialized "Aspect" type
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Aspect"), Id2);
+	TestEqual(TEXT("GetPrimaryAssetId() uses ContentId and Aspect type"), AspectDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 4. DefinitionValidation Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionValidationTest,
+	"ShadowSlave.AspectDefinition.DefinitionValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionValidationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveAspectDefinition* ValidDef = NewObject<UShadowSlaveAspectDefinition>();
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Aspect"));
+	ValidDef->DisplayName = FText::FromString(TEXT("Valid Test Aspect"));
+	ValidDef->Version = 1;
+	ValidDef->ContentType = EShadowSlaveContentType::Custom;
+
+	FString ErrorMsg;
+
+	// 1. Valid definition passes
+	TestTrue(TEXT("Valid aspect definition must pass IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestTrue(TEXT("Valid aspect definition must pass ValidateDefinition"), ValidDef->ValidateDefinition(ErrorMsg));
+
+	// 2. Generic validation: ContentId None fails
+	ValidDef->ContentId = NAME_None;
+	TestFalse(TEXT("None ContentId must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestFalse(TEXT("Error message must not be empty on failure"), ErrorMsg.IsEmpty());
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Aspect"));
+
+	// 3. Generic validation: Empty DisplayName fails
+	ValidDef->DisplayName = FText::GetEmpty();
+	TestFalse(TEXT("Empty DisplayName must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->DisplayName = FText::FromString(TEXT("Valid Test Aspect"));
+
+	// 4. Generic validation: Version < 1 fails
+	ValidDef->Version = 0;
+	TestFalse(TEXT("Version 0 must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Version = 1;
+
+	// 5. Generic validation: Wrong ContentType fails
+	ValidDef->ContentType = EShadowSlaveContentType::Ability;
+	TestFalse(TEXT("Wrong ContentType must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->ContentType = EShadowSlaveContentType::Custom;
+
+	// Restored definition passes again
+	TestTrue(TEXT("Restored definition passes IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	return true;
+}
+
+// 5. DefinitionPrimaryAssetId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionPrimaryAssetIdTest,
+	"ShadowSlave.AspectDefinition.DefinitionPrimaryAssetId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionPrimaryAssetIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>();
+	TestNotNull(TEXT("Aspect definition must instantiate"), AspectDef);
+
+	const FName AspectId(TEXT("Aspect_PrimaryAsset_01"));
+	AspectDef->SetAspectId(AspectId);
+	AspectDef->DisplayName = FText::FromString(TEXT("Primary Asset Aspect"));
+	AspectDef->Version = 1;
+
+	const FPrimaryAssetId AssetId = AspectDef->GetPrimaryAssetId();
+	TestEqual(TEXT("GetPrimaryAssetId must equal FPrimaryAssetId(Aspect, ContentId)"),
+		AssetId, FPrimaryAssetId(TEXT("Aspect"), AspectId));
+	TestTrue(TEXT("PrimaryAssetType must be Aspect"), AssetId.PrimaryAssetType == FPrimaryAssetType(TEXT("Aspect")));
+	TestEqual(TEXT("PrimaryAssetName must be ContentId"), AssetId.PrimaryAssetName, AspectId);
+
+	// Fallback: none ContentId uses UObject name, still Aspect type via Custom hook
+	AspectDef->ContentId = NAME_None;
+	const FPrimaryAssetId FallbackId = AspectDef->GetPrimaryAssetId();
+	TestTrue(TEXT("Fallback PrimaryAssetType remains Aspect"), FallbackId.PrimaryAssetType == FPrimaryAssetType(TEXT("Aspect")));
+	TestEqual(TEXT("Fallback PrimaryAssetName uses GetFName()"), FallbackId.PrimaryAssetName, AspectDef->GetFName());
+
+	return true;
+}
+
+// 6. DefinitionRegistryIntegration Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionRegistryIntegrationTest,
+	"ShadowSlave.AspectDefinition.DefinitionRegistryIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionRegistryIntegrationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveContentRegistrySubsystem* Registry = NewObject<UShadowSlaveContentRegistrySubsystem>();
+	TestNotNull(TEXT("Registry subsystem must be created"), Registry);
+
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>();
+	AspectDef->ContentId = FName(TEXT("Aspect_Registry_Test"));
+	AspectDef->DisplayName = FText::FromString(TEXT("Registry Test Aspect"));
+	AspectDef->Version = 1;
+	AspectDef->AspectRank = EShadowSlaveAspectRank::Awakened;
+
+	// 1. Register with generic registry subsystem
+	const bool bRegistered = Registry->RegisterDefinition(AspectDef);
+	TestTrue(TEXT("RegisterDefinition must succeed for UShadowSlaveAspectDefinition"), bRegistered);
+
+	// 2. Query existence & count
+	TestTrue(TEXT("HasContent must return true for registered AspectDef"), Registry->HasContent(AspectDef->ContentId));
+	TestEqual(TEXT("Total registered count must be 1"), Registry->GetRegisteredContentCount(), 1);
+	TestEqual(TEXT("Custom count by type must be 1"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Custom), 1);
+	TestEqual(TEXT("Ability count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Ability), 0);
+	TestEqual(TEXT("Memory count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Memory), 0);
+	TestEqual(TEXT("Echo count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Echo), 0);
+	TestEqual(TEXT("Story count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Story), 0);
+	TestEqual(TEXT("Item count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Item), 0);
+
+	// 3. Generic resolution
+	UShadowSlaveContentDefinition* ResolvedGeneric = Registry->ResolveContentDefinition(AspectDef->ContentId);
+	TestNotNull(TEXT("Resolved generic definition must not be null"), ResolvedGeneric);
+	TestEqual(TEXT("Resolved generic definition must match AspectDef"), ResolvedGeneric, Cast<UShadowSlaveContentDefinition>(AspectDef));
+
+	// 4. Typed resolution
+	UShadowSlaveAspectDefinition* ResolvedAspect = Registry->ResolveContentDefinition<UShadowSlaveAspectDefinition>(AspectDef->ContentId);
+	TestNotNull(TEXT("Resolved typed aspect definition must not be null"), ResolvedAspect);
+	TestEqual(TEXT("Resolved typed aspect must match original AspectDef"), ResolvedAspect, AspectDef);
+	TestEqual(TEXT("Resolved AspectRank matches"), ResolvedAspect->AspectRank, EShadowSlaveAspectRank::Awakened);
+
+	// 5. PrimaryAssetId verification: uses specialized "Aspect" type
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Aspect"), AspectDef->ContentId);
+	TestEqual(TEXT("GetPrimaryAssetId must match expected PrimaryAssetId with Aspect type"), AspectDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 7. ExistingRuntimeCompatibility Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveAspectDefinitionExistingRuntimeCompatibilityTest,
+	"ShadowSlave.AspectDefinition.ExistingRuntimeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveAspectDefinitionExistingRuntimeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	AShadowSlavePlayerCharacter* Player = NewObject<AShadowSlavePlayerCharacter>();
+	TestNotNull(TEXT("Player must instantiate"), Player);
+	if (!Player)
+	{
+		return false;
+	}
+
+	UShadowSlaveAspectComponent* Aspect = Player->GetAspectComponent();
+	UShadowSlaveAttributeComponent* Attributes = Player->GetAttributeComponent();
+	UShadowSlaveProgressionComponent* Progression = Player->GetProgressionComponent();
+	TestNotNull(TEXT("Aspect component must exist"), Aspect);
+	TestNotNull(TEXT("Attribute component must exist"), Attributes);
+	TestNotNull(TEXT("Progression component must exist"), Progression);
+	if (!Aspect || !Attributes || !Progression)
+	{
+		return false;
+	}
+
+	const FName AspectId(TEXT("Compat_Pipeline_Aspect"));
+	const FName AbilityId(TEXT("Compat_Pipeline_Ability"));
+
+	UShadowSlaveAspectAbilityDefinition* AbilityDef = NewObject<UShadowSlaveAspectAbilityDefinition>(Player);
+	AbilityDef->SetAbilityId(AbilityId);
+	AbilityDef->DisplayName = FText::FromString(TEXT("Compat Pipeline Ability"));
+	AbilityDef->Version = 1;
+	AbilityDef->BaseEssenceCost = 10.0f;
+	AbilityDef->RequiredCharacterRank = EShadowSlaveCharacterRank::Unknown;
+
+	UShadowSlaveFlawDefinition* FlawDef = NewObject<UShadowSlaveFlawDefinition>(Player);
+	FlawDef->SetFlawId(FName(TEXT("Compat_Pipeline_Flaw")));
+	FlawDef->DisplayName = FText::FromString(TEXT("Compat Pipeline Flaw"));
+	FlawDef->Version = 1;
+
+	UShadowSlaveAspectDefinition* AspectDef = NewObject<UShadowSlaveAspectDefinition>(Player);
+	AspectDef->SetAspectId(AspectId);
+	AspectDef->DisplayName = FText::FromString(TEXT("Compat Pipeline Aspect"));
+	AspectDef->Version = 1;
+	AspectDef->AspectRank = EShadowSlaveAspectRank::Ascended;
+	AspectDef->AbilityDefinitions.Add(AbilityDef);
+	AspectDef->FlawDefinition = FlawDef;
+
+	TestTrue(TEXT("SetAspectDefinition must succeed"), Aspect->SetAspectDefinition(AspectDef));
+	TestEqual(TEXT("Bound Aspect definition matches"), Aspect->GetAspectDefinition(), AspectDef);
+	TestEqual(TEXT("GetAspectId remains ContentId"), AspectDef->GetAspectId(), AspectId);
+	TestEqual(TEXT("Aspect rank is read from definition"), Aspect->GetAspectRank(), EShadowSlaveAspectRank::Ascended);
+	TestEqual(TEXT("Bound Flaw matches definition"), Aspect->GetFlawDefinition(), FlawDef);
+	TestEqual(TEXT("FindAbilityById returns the granted ability"), AspectDef->FindAbilityById(AbilityId), AbilityDef);
+
+	Attributes->SetEssence(40.0f);
+	TestTrue(TEXT("UnlockAbility succeeds"), Aspect->UnlockAbility(AbilityId));
+	TestTrue(TEXT("CanActivateAbility succeeds with sufficient Essence"), Aspect->CanActivateAbility(AbilityId));
+	TestTrue(TEXT("ActivateAbility succeeds"), Aspect->ActivateAbility(AbilityId));
+	TestTrue(TEXT("Ability is transiently active"), Aspect->IsAbilityActive(AbilityId));
+	TestNearlyEqual(TEXT("Essence consumed on activation"), Attributes->GetCurrentEssence(), 30.0f, 0.001f);
+
+	UShadowSlaveSaveSubsystem* SaveSub = NewObject<UShadowSlaveSaveSubsystem>();
+	TestNotNull(TEXT("SaveSubsystem must instantiate"), SaveSub);
+
+	FShadowSlaveAspectSaveData SaveData;
+	SaveSub->CaptureAspect(Aspect, SaveData);
+	TestTrue(TEXT("CaptureAspect produces valid save data"), SaveData.bIsValid);
+	TestEqual(TEXT("Saved AspectId matches GetAspectId/ContentId"), SaveData.AspectId, AspectDef->GetAspectId());
+	TestEqual(TEXT("Saved AspectAssetId matches GetPrimaryAssetId"), SaveData.AspectAssetId, AspectDef->GetPrimaryAssetId());
+	TestTrue(TEXT("UnlockedAbilityIds contains AbilityId"), SaveData.UnlockedAbilityIds.Contains(AbilityId));
+	TestEqual(TEXT("Saved FlawId matches bound Flaw"), SaveData.FlawId, FlawDef->GetFlawId());
+
+	TestTrue(TEXT("Aspect replacement succeeds"), Aspect->SetAspectDefinition(nullptr));
+	TestFalse(TEXT("HasAspect is false after replacement"), Aspect->HasAspect());
+	TestFalse(TEXT("Transient active ability state is cleared"), Aspect->IsAbilityActive(AbilityId));
 	TestNull(TEXT("Active Flaw is null after Aspect removal"), Aspect->GetFlawDefinition());
 
 	return true;

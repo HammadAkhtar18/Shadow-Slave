@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Aspects/ShadowSlaveAspectTypes.h"
 #include "Aspects/ShadowSlaveAspectAbilityDefinition.h"
 #include "Aspects/ShadowSlaveFlawDefinition.h"
@@ -12,12 +12,27 @@
 class UTexture2D;
 
 /**
- * Data-driven primary data asset defining an immutable Aspect archetype in Shadow Slave.
- * Holds verified canon classification (Aspect Rank), static ability definitions, and bound Flaw definition.
- * Cleanly separates immutable static Aspect archetype data from mutable runtime character state.
+ * Data-driven content definition defining an immutable Aspect archetype in Shadow Slave.
+ * Specialization of UShadowSlaveContentDefinition for the generic content pipeline.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. SPECIALIZED CONTENT DEFINITION: AspectDefinition is a specialized static content definition
+ *    deriving from UShadowSlaveContentDefinition.
+ * 2. GENERIC CONTENT CLASSIFICATION: Generic ContentType is EShadowSlaveContentType::Custom because
+ *    the generic content pipeline taxonomy currently does not define a dedicated Aspect member.
+ * 3. SPECIALIZED PRIMARY ASSET TYPE: Utilizes the GetCustomPrimaryAssetType() hook to produce
+ *    deterministic PrimaryAssetId with PrimaryAssetType "Aspect": FPrimaryAssetId(TEXT("Aspect"), ContentId).
+ * 4. SINGLE AUTHORITATIVE ID: ContentId is the sole stored stable identifier. GetAspectId() and SetAspectId()
+ *    provide backward-compatible accessors without duplicate storage or reference-member aliases.
+ * 5. RUNTIME STATE SEPARATION: Aspect runtime binding, ability instances, and Flaw ownership remain
+ *    authoritative with UShadowSlaveAspectComponent; static definition data remains immutable.
+ * 6. CHARACTER RANK AUTHORITY: UShadowSlaveProgressionComponent remains authoritative for Character Rank.
+ *    AspectRank on this definition is a separate classification from character rank.
+ * 7. CONTENT REGISTRY ROLE: UShadowSlaveContentRegistrySubsystem provides static definition lookup and
+ *    discovery only; it does NOT track runtime aspect, character, or ability state.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveAspectDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveAspectDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -26,19 +41,21 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/* --- Identity --- */
+	/**
+	 * Validates definition configuration.
+	 * Combines base generic content validation (valid ContentId, valid DisplayName, Version >= 1, ContentType == Custom).
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Technical unique identifier for this Aspect */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Aspect|Identity")
-	FName AspectId = NAME_None;
+	/* --- Identification Compatibility Accessors --- */
 
-	/** Display name shown to players in UI/status (e.g. "Shadow Slave") */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Aspect|Identity")
-	FText DisplayName;
+	/** Compatibility accessor returning authoritative ContentId as AspectId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Aspect|Identity")
+	FName GetAspectId() const { return ContentId; }
 
-	/** Narrative description of the Aspect */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Aspect|Identity", meta = (MultiLine = true))
-	FText Description;
+	/** Compatibility accessor setting authoritative ContentId as AspectId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Aspect|Identity")
+	void SetAspectId(FName InAspectId) { ContentId = InAspectId; }
 
 	/* --- Classification --- */
 
@@ -88,4 +105,8 @@ public:
 	/** Canon research provenance or verification notes */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Aspect|Metadata")
 	FString CanonProvenance;
+
+protected:
+	/** Hook returning specialized PrimaryAssetType "Aspect" for ContentType == Custom */
+	virtual FName GetCustomPrimaryAssetType() const override { return TEXT("Aspect"); }
 };
