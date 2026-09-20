@@ -3,16 +3,29 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "ShadowSlaveFlawDefinition.generated.h"
 
 /**
- * Data-driven primary data asset defining a canon or custom character Flaw.
- * Flaws are metaphysical limitations bound to a soul in the Shadow Slave universe.
- * Static definition; contains narrative identity and metadata without hardcoded execution logic.
+ * Data-driven content definition defining a canon or custom character Flaw.
+ * Specialization of UShadowSlaveContentDefinition for the generic content pipeline.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. SPECIALIZED CONTENT DEFINITION: FlawDefinition is a specialized static content definition
+ *    deriving from UShadowSlaveContentDefinition.
+ * 2. GENERIC CONTENT CLASSIFICATION: Generic ContentType is EShadowSlaveContentType::Custom because
+ *    the generic content pipeline taxonomy currently does not define a dedicated Flaw member.
+ * 3. SPECIALIZED PRIMARY ASSET TYPE: Utilizes the GetCustomPrimaryAssetType() hook to produce
+ *    deterministic PrimaryAssetId with PrimaryAssetType "Flaw": FPrimaryAssetId(TEXT("Flaw"), ContentId).
+ * 4. SINGLE AUTHORITATIVE ID: ContentId is the sole stored stable identifier. GetFlawId() and SetFlawId()
+ *    provide backward-compatible accessors without duplicate storage or reference-member aliases.
+ * 5. RUNTIME STATE SEPARATION: Flaw runtime binding and ownership remain authoritative with
+ *    UShadowSlaveAspectComponent; static definition data remains immutable.
+ * 6. CONTENT REGISTRY ROLE: UShadowSlaveContentRegistrySubsystem provides static definition lookup and
+ *    discovery only; it does NOT track runtime aspect, character, or flaw binding state.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveFlawDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveFlawDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -21,17 +34,23 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/** Technical unique identifier for this Flaw */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Flaw|Identity")
-	FName FlawId = NAME_None;
+	/**
+	 * Validates definition configuration.
+	 * Combines base generic content validation (valid ContentId, valid DisplayName, Version >= 1, ContentType == Custom).
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Display name shown to players in UI/status */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Flaw|Identity")
-	FText DisplayName;
+	/* --- Identification Compatibility Accessors --- */
 
-	/** Descriptive/narrative text detailing the Flaw's nature */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Flaw|Identity", meta = (MultiLine = true))
-	FText Description;
+	/** Compatibility accessor returning authoritative ContentId as FlawId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Flaw|Identity")
+	FName GetFlawId() const { return ContentId; }
+
+	/** Compatibility accessor setting authoritative ContentId as FlawId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Flaw|Identity")
+	void SetFlawId(FName InFlawId) { ContentId = InFlawId; }
+
+	/* --- Metadata & Provenance --- */
 
 	/** Extensible metadata key-value pairs for future systems */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Flaw|Metadata")
@@ -40,4 +59,8 @@ public:
 	/** Canon research provenance or verification notes */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Flaw|Metadata")
 	FString CanonProvenance;
+
+protected:
+	/** Hook returning specialized PrimaryAssetType "Flaw" for ContentType == Custom */
+	virtual FName GetCustomPrimaryAssetType() const override { return TEXT("Flaw"); }
 };

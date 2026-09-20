@@ -476,7 +476,7 @@ void UShadowSlaveSaveSubsystem::CaptureAspect(UShadowSlaveAspectComponent* Aspec
 
 	if (UShadowSlaveFlawDefinition* FlawDef = AspectComp->GetFlawDefinition())
 	{
-		OutData.FlawId = FlawDef->FlawId;
+		OutData.FlawId = FlawDef->GetFlawId();
 		OutData.FlawAssetId = FlawDef->GetPrimaryAssetId();
 	}
 
