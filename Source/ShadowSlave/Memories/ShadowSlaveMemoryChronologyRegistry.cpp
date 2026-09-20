@@ -5,15 +5,51 @@
 #include "ShadowSlave.h"
 
 UShadowSlaveMemoryChronologyRegistry::UShadowSlaveMemoryChronologyRegistry()
+	: UShadowSlaveContentDefinition()
 {
-	RegistryId = FName(TEXT("Registry_Default"));
-	RegistryName = FText::FromString(TEXT("Default Memory Chronology Registry"));
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Custom;
+	DisplayName = FText::FromString(TEXT("Default Memory Chronology Registry"));
 	Description = FText::FromString(TEXT("Chronological timeline and verified canon metadata for Memories."));
+	Version = 1;
 }
 
 FPrimaryAssetId UShadowSlaveMemoryChronologyRegistry::GetPrimaryAssetId() const
 {
-	return FPrimaryAssetId(TEXT("MemoryChronologyRegistry"), GetFName());
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveMemoryChronologyRegistry::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content validation: DisplayName must not be empty
+	if (DisplayName.IsEmpty())
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Memory chronology registry '%s' must have a non-empty DisplayName."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Generic content type validation: must be Custom (generic taxonomy has no Chronology member)
+	if (ContentType != EShadowSlaveContentType::Custom)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Memory chronology registry '%s' must have ContentType == EShadowSlaveContentType::Custom."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	return true;
 }
 
 TArray<FShadowSlaveMemoryChronologyEntry> UShadowSlaveMemoryChronologyRegistry::GetEntriesByArc(EShadowSlaveStoryArc Arc) const
@@ -95,7 +131,7 @@ TArray<FShadowSlaveMemoryChronologyEntry> UShadowSlaveMemoryChronologyRegistry::
 
 void UShadowSlaveMemoryChronologyRegistry::LogChronology() const
 {
-	UE_LOG(LogShadowSlave, Log, TEXT("[Chronology Registry: %s] %d total entries:"), *RegistryName.ToString(), ChronologyEntries.Num());
+	UE_LOG(LogShadowSlave, Log, TEXT("[Chronology Registry: %s] %d total entries:"), *DisplayName.ToString(), ChronologyEntries.Num());
 
 	for (int32 i = 0; i < ChronologyEntries.Num(); ++i)
 	{
@@ -129,9 +165,11 @@ UShadowSlaveMemoryChronologyRegistry* UShadowSlaveMemoryChronologyRegistry::Crea
 		return nullptr;
 	}
 
-	Registry->RegistryId = FName(TEXT("Registry_Sunny_Baseline"));
-	Registry->RegistryName = FText::FromString(TEXT("Sunny Baseline Memory Chronology (First Nightmare -> Antarctica)"));
+	Registry->SetRegistryId(FName(TEXT("Registry_Sunny_Baseline")));
+	Registry->DisplayName = FText::FromString(TEXT("Sunny Baseline Memory Chronology (First Nightmare -> Antarctica)"));
 	Registry->Description = FText::FromString(TEXT("Chronological canon registry of Sunny's verified Memories across the First Nightmare, Forgotten Shore, Chained Isles, and Antarctica."));
+	Registry->ContentType = EShadowSlaveContentType::Custom;
+	Registry->Version = 1;
 
 	// 1. Silver Bell (First Nightmare, Ch. 8)
 	{
