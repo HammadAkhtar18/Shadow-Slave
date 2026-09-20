@@ -11,7 +11,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
-├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, and teardown safety
+├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, teardown safety, and content pipeline integration
 ├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, and expired-effect-not-restored verification
 ├── ShadowSlaveGameplayTagTests.cpp   # Native Gameplay Tag container queries, mutation, hierarchical matching, and decoupled architecture
 ├── ShadowSlaveContentRegistryTests.cpp # Generic content data asset registration, soft reference resolution, duplicate rejection, and decoupled architecture
@@ -29,6 +29,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Dialogue.*`
 - `ShadowSlave.Aspects.*`
 - `ShadowSlave.Echoes.*`
+- `ShadowSlave.Echo.*`
 - `ShadowSlave.StatusEffects.*`
 - `ShadowSlave.GameplayTags.*`
 - `ShadowSlave.ContentRegistry.*`

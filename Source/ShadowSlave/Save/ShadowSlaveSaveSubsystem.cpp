@@ -662,7 +662,7 @@ void UShadowSlaveSaveSubsystem::CaptureEchoes(UShadowSlaveEchoComponent* EchoCom
 		{
 			FShadowSlaveEchoSaveData EchoData;
 			EchoData.InstanceId = Echo.InstanceId;
-			EchoData.EchoId = Echo.EchoDefinition ? Echo.EchoDefinition->EchoId : NAME_None;
+			EchoData.EchoId = Echo.EchoDefinition ? Echo.EchoDefinition->GetEchoId() : NAME_None;
 			EchoData.EchoPrimaryAssetId = Echo.EchoDefinition ? Echo.EchoDefinition->GetPrimaryAssetId() : FPrimaryAssetId();
 
 			// Persist durable state only: transient Summoned state is normalized to Dormant.

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Echoes/ShadowSlaveEchoTypes.h"
 #include "ShadowSlaveEchoDefinition.generated.h"
 
@@ -12,12 +12,23 @@ class UTexture2D;
 
 /**
  * Data-driven primary data asset describing immutable static Echo archetypes.
- * Registered with Unreal Engine's Asset Manager via PrimaryAssetId.
- * Holds technical classifications (Rank, Class), summoning parameters, and visual/pawn references.
- * Cleanly separates immutable Echo definitions from mutable owned runtime instances.
+ * Derived from UShadowSlaveContentDefinition as part of the generic static content pipeline.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. Specialized Content Definition: Inherits common metadata (ContentId, DisplayName, Description,
+ *    Version, MetadataTags, ProvenanceNote) from UShadowSlaveContentDefinition.
+ * 2. Single Authoritative ID: ContentId is the single authoritative stored identifier. Backwards
+ *    compatibility is provided through GetEchoId() and SetEchoId() accessors only.
+ * 3. Content Type: Statically identified as EShadowSlaveContentType::Echo.
+ * 4. Echo-Specific Data: Owns technical classifications (Rank, Class), summoning parameters, and
+ *    future manifestation assets.
+ * 5. Runtime Separation: Cleanly separates immutable Echo definitions from mutable owned runtime
+ *    instances (FShadowSlaveEchoInstance managed by UShadowSlaveEchoComponent).
+ * 6. Static Infrastructure: Participates in UShadowSlaveContentRegistrySubsystem without replacing
+ *    or coupling to UShadowSlaveEchoComponent.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveEchoDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveEchoDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -26,19 +37,27 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/* --- Identity --- */
+	/**
+	 * Validates definition configuration.
+	 * Performs generic content validation (ID, Version, ContentType) and Echo-specific validation.
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Technical internal identifier for this Echo */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Identity")
-	FName EchoId = NAME_None;
+	/* --- Identity Compatibility --- */
 
-	/** Display name shown to players in UI/logs */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Identity")
-	FText DisplayName;
+	/**
+	 * Returns the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Echo API.
+	 */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Echo|Identity")
+	FName GetEchoId() const { return ContentId; }
 
-	/** Narrative or description text */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Echo|Identity", meta = (MultiLine = true))
-	FText Description;
+	/**
+	 * Sets the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Echo API.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Echo|Identity")
+	void SetEchoId(FName InEchoId) { ContentId = InEchoId; }
 
 	/* --- Classification --- */
 

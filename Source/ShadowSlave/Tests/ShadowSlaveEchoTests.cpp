@@ -11,6 +11,9 @@
 #include "Characters/ShadowSlavePlayerCharacter.h"
 #include "Save/ShadowSlaveSaveSubsystem.h"
 #include "Save/ShadowSlaveSaveTypes.h"
+#include "Content/ShadowSlaveContentTypes.h"
+#include "Content/ShadowSlaveContentDefinition.h"
+#include "Content/ShadowSlaveContentRegistrySubsystem.h"
 
 namespace
 {
@@ -37,7 +40,7 @@ namespace
 				return false;
 			}
 
-			EchoDef->EchoId = FName(TEXT("Test_Echo_Scout"));
+			EchoDef->SetEchoId(FName(TEXT("Test_Echo_Scout")));
 			EchoDef->DisplayName = FText::FromString(TEXT("Test Scout"));
 			EchoDef->Rank = Rank;
 			EchoDef->Class = Class;
@@ -285,7 +288,7 @@ bool FShadowSlaveEchoSaveLoadRoundtripTest::RunTest(const FString& Parameters)
 	if (SavedEcho1)
 	{
 		TestEqual(TEXT("Saved GUID must match"), SavedEcho1->InstanceId, OriginalEcho1.InstanceId);
-		TestEqual(TEXT("Saved EchoId must match"), SavedEcho1->EchoId, Fixture.EchoDef->EchoId);
+		TestEqual(TEXT("Saved EchoId must match"), SavedEcho1->EchoId, Fixture.EchoDef->GetEchoId());
 		TestEqual(TEXT("Saved State must be Dormant (summoned state is transient and never saved)"), SavedEcho1->State, EShadowSlaveEchoState::Dormant);
 		TestTrue(TEXT("Saved dynamic properties must contain TestKey"), SavedEcho1->DynamicProperties.Contains(FName(TEXT("TestKey"))));
 		TestEqual(TEXT("Saved dynamic property value must match"), SavedEcho1->DynamicProperties[FName(TEXT("TestKey"))], TEXT("TestVal"));
@@ -548,7 +551,7 @@ bool FShadowSlaveEchoSaveLoadPreservesPersistentDataTest::RunTest(const FString&
 	TestNotNull(TEXT("Definition must be resolved"), RestoredInstance.EchoDefinition.Get());
 	if (RestoredInstance.EchoDefinition)
 	{
-		TestEqual(TEXT("Definition EchoId must match"), RestoredInstance.EchoDefinition->EchoId, Fixture.EchoDef->EchoId);
+		TestEqual(TEXT("Definition EchoId must match"), RestoredInstance.EchoDefinition->GetEchoId(), Fixture.EchoDef->GetEchoId());
 	}
 
 	// Verify Dynamic properties survive
@@ -715,6 +718,243 @@ bool FShadowSlaveEchoTeardownDoesNotTriggerGameplayDismissTest::RunTest(const FS
 	// Invariant: Echo ownership is NOT lost during teardown
 	TestEqual(TEXT("Echo count must still be 1 (ownership preserved during teardown)"), Fixture.EchoComp->GetEchoCount(), 1);
 	TestTrue(TEXT("Echo remains owned by instance ID"), Fixture.EchoComp->HasEchoByInstanceId(Echo.InstanceId));
+
+	return true;
+}
+
+// 10. DefinitionUsesGenericContentBase Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDefinitionUsesGenericContentBaseTest,
+	"ShadowSlave.Echo.DefinitionUsesGenericContentBase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDefinitionUsesGenericContentBaseTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveEchoDefinition* Def = NewObject<UShadowSlaveEchoDefinition>();
+	TestNotNull(TEXT("Echo definition must be instantiable"), Def);
+
+	// Verify C++ inheritance and UClass reflection hierarchy
+	UShadowSlaveContentDefinition* ContentDef = Cast<UShadowSlaveContentDefinition>(Def);
+	TestNotNull(TEXT("Echo definition must cast to UShadowSlaveContentDefinition"), ContentDef);
+	TestTrue(TEXT("Echo definition IsA(UShadowSlaveContentDefinition)"), Def->IsA(UShadowSlaveContentDefinition::StaticClass()));
+	TestTrue(TEXT("StaticClass hierarchy is child of UShadowSlaveContentDefinition"),
+		UShadowSlaveEchoDefinition::StaticClass()->IsChildOf(UShadowSlaveContentDefinition::StaticClass()));
+
+	return true;
+}
+
+// 11. DefinitionUsesEchoContentType Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDefinitionUsesEchoContentTypeTest,
+	"ShadowSlave.Echo.DefinitionUsesEchoContentType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDefinitionUsesEchoContentTypeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveEchoDefinition* Def = NewObject<UShadowSlaveEchoDefinition>();
+	TestNotNull(TEXT("Echo definition must be instantiable"), Def);
+	TestEqual(TEXT("Default ContentType must be EShadowSlaveContentType::Echo"), Def->ContentType, EShadowSlaveContentType::Echo);
+
+	return true;
+}
+
+// 12. DefinitionHasSingleAuthoritativeId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDefinitionHasSingleAuthoritativeIdTest,
+	"ShadowSlave.Echo.DefinitionHasSingleAuthoritativeId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDefinitionHasSingleAuthoritativeIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveEchoDefinition* Def = NewObject<UShadowSlaveEchoDefinition>();
+	TestNotNull(TEXT("Echo definition must be instantiable"), Def);
+
+	// 1. ContentId is the only stored authoritative ID; initially NAME_None
+	TestTrue(TEXT("ContentId initially None"), Def->ContentId.IsNone());
+	TestTrue(TEXT("GetEchoId() initially None"), Def->GetEchoId().IsNone());
+
+	// Verify EchoId is not a stored UPROPERTY, while ContentId is
+	TestNull(TEXT("EchoId must not be a stored UPROPERTY on UShadowSlaveEchoDefinition"),
+		UShadowSlaveEchoDefinition::StaticClass()->FindPropertyByName(TEXT("EchoId")));
+	TestNotNull(TEXT("ContentId must be a stored UPROPERTY on UShadowSlaveEchoDefinition"),
+		UShadowSlaveEchoDefinition::StaticClass()->FindPropertyByName(TEXT("ContentId")));
+
+	// 2. GetEchoId() returns ContentId
+	const FName IdA(TEXT("Echo_Authoritative_A"));
+	Def->ContentId = IdA;
+	TestEqual(TEXT("GetEchoId() must return ContentId"), Def->GetEchoId(), IdA);
+
+	// 3. SetEchoId() changes ContentId
+	const FName IdB(TEXT("Echo_Authoritative_B"));
+	Def->SetEchoId(IdB);
+	TestEqual(TEXT("ContentId must be updated by SetEchoId()"), Def->ContentId, IdB);
+	TestEqual(TEXT("GetEchoId() must reflect SetEchoId() update"), Def->GetEchoId(), IdB);
+
+	// 4. Changing ContentId is reflected by GetEchoId()
+	const FName IdC(TEXT("Echo_Authoritative_C"));
+	Def->ContentId = IdC;
+	TestEqual(TEXT("GetEchoId() must reflect direct ContentId change"), Def->GetEchoId(), IdC);
+
+	return true;
+}
+
+// 13. DefinitionValidation Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDefinitionValidationTest,
+	"ShadowSlave.Echo.DefinitionValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDefinitionValidationTest::RunTest(const FString& Parameters)
+{
+	// 1. Valid definition passes validation
+	UShadowSlaveEchoDefinition* ValidDef = NewObject<UShadowSlaveEchoDefinition>();
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Echo"));
+	ValidDef->SummonEssenceCost = 10.0f;
+
+	FString ErrorMsg;
+	TestTrue(TEXT("Valid echo passes IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestTrue(TEXT("Valid echo passes ValidateDefinition"), ValidDef->ValidateDefinition(ErrorMsg));
+
+	// 2. NAME_None ContentId fails validation
+	ValidDef->ContentId = NAME_None;
+	TestFalse(TEXT("NAME_None ContentId must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestFalse(TEXT("Error message must be populated for None ContentId"), ErrorMsg.IsEmpty());
+
+	// 3. Version < 1 fails validation
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Echo"));
+	ValidDef->Version = 0;
+	TestFalse(TEXT("Version 0 must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// 4. Incorrect ContentType fails validation
+	ValidDef->Version = 1;
+	ValidDef->ContentType = EShadowSlaveContentType::Memory;
+	TestFalse(TEXT("ContentType != Echo must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// 5. Negative SummonEssenceCost fails validation
+	ValidDef->ContentType = EShadowSlaveContentType::Echo;
+	ValidDef->SummonEssenceCost = -5.0f;
+	TestFalse(TEXT("Negative SummonEssenceCost must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// Restored definition passes again
+	ValidDef->SummonEssenceCost = 0.0f;
+	TestTrue(TEXT("Restored definition passes validation"), ValidDef->IsValidDefinition());
+
+	return true;
+}
+
+// 14. DefinitionRegistryIntegration Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoDefinitionRegistryIntegrationTest,
+	"ShadowSlave.Echo.DefinitionRegistryIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoDefinitionRegistryIntegrationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveContentRegistrySubsystem* Registry = NewObject<UShadowSlaveContentRegistrySubsystem>();
+	TestNotNull(TEXT("Registry subsystem must be created"), Registry);
+
+	UShadowSlaveEchoDefinition* EchoDef = NewObject<UShadowSlaveEchoDefinition>();
+	EchoDef->ContentId = FName(TEXT("Echo_Test_Scout"));
+	EchoDef->DisplayName = FText::FromString(TEXT("Test Scout Echo"));
+	EchoDef->Rank = EShadowSlaveEchoRank::Awakened;
+	EchoDef->Class = EShadowSlaveEchoClass::Monster;
+	EchoDef->SummonEssenceCost = 15.0f;
+
+	// Register with generic registry subsystem
+	const bool bRegistered = Registry->RegisterDefinition(EchoDef);
+	TestTrue(TEXT("RegisterDefinition must succeed for UShadowSlaveEchoDefinition"), bRegistered);
+
+	// Query existence
+	TestTrue(TEXT("HasContent must return true for registered Echo"), Registry->HasContent(EchoDef->ContentId));
+	TestEqual(TEXT("Total registered count must be 1"), Registry->GetRegisteredContentCount(), 1);
+	TestEqual(TEXT("Echo count by type must be 1"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Echo), 1);
+	TestEqual(TEXT("Memory count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Memory), 0);
+
+	// Generic resolution
+	UShadowSlaveContentDefinition* ResolvedGeneric = Registry->ResolveContentDefinition(EchoDef->ContentId);
+	TestNotNull(TEXT("Resolved generic definition must not be null"), ResolvedGeneric);
+	TestEqual(TEXT("Resolved generic definition must match EchoDef"), ResolvedGeneric, Cast<UShadowSlaveContentDefinition>(EchoDef));
+
+	// Typed resolution
+	UShadowSlaveEchoDefinition* ResolvedEcho = Registry->ResolveContentDefinition<UShadowSlaveEchoDefinition>(EchoDef->ContentId);
+	TestNotNull(TEXT("Resolved typed echo definition must not be null"), ResolvedEcho);
+	TestEqual(TEXT("Resolved typed echo must match original EchoDef"), ResolvedEcho, EchoDef);
+	TestEqual(TEXT("Resolved Rank matches"), ResolvedEcho->Rank, EchoDef->Rank);
+	TestEqual(TEXT("Resolved Class matches"), ResolvedEcho->Class, EchoDef->Class);
+	TestEqual(TEXT("Resolved SummonEssenceCost matches"), ResolvedEcho->SummonEssenceCost, EchoDef->SummonEssenceCost);
+
+	// PrimaryAssetId verification
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Echo"), EchoDef->ContentId);
+	TestEqual(TEXT("GetPrimaryAssetId must match expected PrimaryAssetId"), EchoDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 15. ExistingRuntimeCompatibility Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveEchoExistingRuntimeCompatibilityTest,
+	"ShadowSlave.Echo.ExistingRuntimeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveEchoExistingRuntimeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	AShadowSlavePlayerCharacter* Player = NewObject<AShadowSlavePlayerCharacter>();
+	TestNotNull(TEXT("Player must be instantiable"), Player);
+
+	UShadowSlaveEchoComponent* EchoComp = Player->GetEchoComponent();
+	UShadowSlaveAttributeComponent* AttrComp = Player->GetAttributeComponent();
+	TestNotNull(TEXT("EchoComp must exist on Player"), EchoComp);
+	TestNotNull(TEXT("AttrComp must exist on Player"), AttrComp);
+
+	AttrComp->SetCurrentEssence(100.0f);
+
+	UShadowSlaveEchoDefinition* EchoDef = NewObject<UShadowSlaveEchoDefinition>(Player);
+	EchoDef->ContentId = FName(TEXT("Compat_Echo"));
+	EchoDef->Rank = EShadowSlaveEchoRank::Awakened;
+	EchoDef->Class = EShadowSlaveEchoClass::Monster;
+	EchoDef->SummonEssenceCost = 10.0f;
+
+	// 1. Acquisition
+	FShadowSlaveEchoInstance Acquired;
+	TestTrue(TEXT("AcquireEcho succeeds"), EchoComp->AcquireEcho(EchoDef, Acquired));
+	TestTrue(TEXT("Acquired is valid"), Acquired.IsValid());
+	TestEqual(TEXT("Acquired definition matches"), Acquired.EchoDefinition.Get(), EchoDef);
+	TestEqual(TEXT("Acquired Rank matches"), Acquired.GetRank(), EShadowSlaveEchoRank::Awakened);
+	TestEqual(TEXT("Acquired Class matches"), Acquired.GetClass(), EShadowSlaveEchoClass::Monster);
+	TestTrue(TEXT("EchoComp has echo by instance ID"), EchoComp->HasEchoByInstanceId(Acquired.InstanceId));
+	TestEqual(TEXT("EchoComp echo count is 1"), EchoComp->GetEchoCount(), 1);
+
+	// 2. Summon and Dismiss
+	TestTrue(TEXT("SummonEcho succeeds"), EchoComp->SummonEcho(Acquired.InstanceId));
+	TestTrue(TEXT("IsEchoSummoned is true"), EchoComp->IsEchoSummoned(Acquired.InstanceId));
+	TestTrue(TEXT("DismissEcho succeeds"), EchoComp->DismissEcho(Acquired.InstanceId));
+	TestFalse(TEXT("IsEchoSummoned is false after dismiss"), EchoComp->IsEchoSummoned(Acquired.InstanceId));
+
+	// 3. Destruction and Removal
+	TestTrue(TEXT("DestroyEcho succeeds"), EchoComp->DestroyEcho(Acquired.InstanceId));
+	FShadowSlaveEchoInstance DestroyedInst;
+	TestTrue(TEXT("FindEcho finds destroyed echo"), EchoComp->FindEcho(Acquired.InstanceId, DestroyedInst));
+	TestEqual(TEXT("Echo state is Destroyed"), DestroyedInst.State, EShadowSlaveEchoState::Destroyed);
+
+	// 4. Save Normalization
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	TestNotNull(TEXT("SaveSubsystem must be created"), SaveSubsystem);
+	FShadowSlaveEchoCollectionSaveData SaveData;
+	SaveSubsystem->CaptureEchoes(EchoComp, SaveData);
+	TestTrue(TEXT("CaptureEchoes succeeds"), SaveData.bIsValid);
+	TestEqual(TEXT("Saved echoes count must be 1"), SaveData.Echoes.Num(), 1);
+	TestEqual(TEXT("Saved echo state must be Destroyed"), SaveData.Echoes[0].State, EShadowSlaveEchoState::Destroyed);
+	TestEqual(TEXT("Saved EchoId must match definition GetEchoId()"), SaveData.Echoes[0].EchoId, EchoDef->GetEchoId());
+
+	// 5. Removal
+	TestTrue(TEXT("RemoveEcho succeeds"), EchoComp->RemoveEcho(Acquired.InstanceId));
+	TestEqual(TEXT("Echo count is 0 after remove"), EchoComp->GetEchoCount(), 0);
 
 	return true;
 }
