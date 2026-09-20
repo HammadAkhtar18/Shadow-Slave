@@ -7,6 +7,7 @@
 #include "Gameplay/ShadowSlaveQuestSubsystem.h"
 #include "Gameplay/ShadowSlaveQuestDefinition.h"
 #include "Gameplay/ShadowSlaveQuestTypes.h"
+#include "Content/ShadowSlaveContentRegistrySubsystem.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShadowSlaveQuestInvalidOrMissingDefinitionTest,
@@ -28,12 +29,12 @@ bool FShadowSlaveQuestInvalidOrMissingDefinitionTest::RunTest(const FString& Par
 
 	// 2. Definition with NAME_None QuestId rejected
 	UShadowSlaveQuestDefinition* EmptyIdDef = NewObject<UShadowSlaveQuestDefinition>();
-	EmptyIdDef->QuestId = NAME_None;
+	EmptyIdDef->SetQuestId(NAME_None);
 	TestFalse(TEXT("Definition with NAME_None QuestId must fail"), QuestSub->RegisterQuestDefinition(EmptyIdDef));
 
 	// 3. Definition with Version < 1 rejected
 	UShadowSlaveQuestDefinition* InvalidVersionDef = NewObject<UShadowSlaveQuestDefinition>();
-	InvalidVersionDef->QuestId = FName("Quest_InvalidVersion");
+	InvalidVersionDef->SetQuestId(FName("Quest_InvalidVersion"));
 	InvalidVersionDef->Version = 0;
 	TestFalse(TEXT("Definition with Version 0 must fail"), QuestSub->RegisterQuestDefinition(InvalidVersionDef));
 
@@ -58,7 +59,7 @@ bool FShadowSlaveQuestDuplicateRegistrationTest::RunTest(const FString& Paramete
 	const FName TestQuestId = FName("Quest_UniqueRegistration");
 
 	UShadowSlaveQuestDefinition* DefA = NewObject<UShadowSlaveQuestDefinition>();
-	DefA->QuestId = TestQuestId;
+	DefA->SetQuestId(TestQuestId);
 	DefA->Version = 1;
 
 	FShadowSlaveObjectiveDefinition ObjA;
@@ -76,7 +77,7 @@ bool FShadowSlaveQuestDuplicateRegistrationTest::RunTest(const FString& Paramete
 
 	// Attempting to register a different definition with the same QuestId must be rejected
 	UShadowSlaveQuestDefinition* DefB = NewObject<UShadowSlaveQuestDefinition>();
-	DefB->QuestId = TestQuestId;
+	DefB->SetQuestId(TestQuestId);
 	DefB->Version = 1;
 	DefB->Objectives.Add(ObjA);
 
@@ -105,11 +106,11 @@ bool FShadowSlaveQuestMissingPrerequisitesTest::RunTest(const FString& Parameter
 	const FName QuestBeta = FName("Quest_Prereq_Beta");
 
 	UShadowSlaveQuestDefinition* DefAlpha = NewObject<UShadowSlaveQuestDefinition>();
-	DefAlpha->QuestId = QuestAlpha;
+	DefAlpha->SetQuestId(QuestAlpha);
 	DefAlpha->Version = 1;
 
 	UShadowSlaveQuestDefinition* DefBeta = NewObject<UShadowSlaveQuestDefinition>();
-	DefBeta->QuestId = QuestBeta;
+	DefBeta->SetQuestId(QuestBeta);
 	DefBeta->Version = 1;
 	DefBeta->PrerequisiteQuestIds.Add(QuestAlpha);
 
@@ -145,11 +146,11 @@ bool FShadowSlaveQuestPrerequisiteCompletionProgressionTest::RunTest(const FStri
 	const FName QuestBeta = FName("Quest_Prog_Beta");
 
 	UShadowSlaveQuestDefinition* DefAlpha = NewObject<UShadowSlaveQuestDefinition>();
-	DefAlpha->QuestId = QuestAlpha;
+	DefAlpha->SetQuestId(QuestAlpha);
 	DefAlpha->Version = 1;
 
 	UShadowSlaveQuestDefinition* DefBeta = NewObject<UShadowSlaveQuestDefinition>();
-	DefBeta->QuestId = QuestBeta;
+	DefBeta->SetQuestId(QuestBeta);
 	DefBeta->Version = 1;
 	DefBeta->PrerequisiteQuestIds.Add(QuestAlpha);
 
@@ -188,7 +189,7 @@ bool FShadowSlaveQuestIllegalLifecycleTransitionsTest::RunTest(const FString& Pa
 
 	const FName QuestId = FName("Quest_Lifecycle");
 	UShadowSlaveQuestDefinition* Def = NewObject<UShadowSlaveQuestDefinition>();
-	Def->QuestId = QuestId;
+	Def->SetQuestId(QuestId);
 	Def->Version = 1;
 	QuestSub->RegisterQuestDefinition(Def);
 
@@ -230,7 +231,7 @@ bool FShadowSlaveQuestObjectiveProgressCannotRegressTest::RunTest(const FString&
 	const FName ObjId = FName("Obj_Count");
 
 	UShadowSlaveQuestDefinition* Def = NewObject<UShadowSlaveQuestDefinition>();
-	Def->QuestId = QuestId;
+	Def->SetQuestId(QuestId);
 	Def->Version = 1;
 	Def->bAutoCompleteWhenObjectivesComplete = false;
 
@@ -259,6 +260,319 @@ bool FShadowSlaveQuestObjectiveProgressCannotRegressTest::RunTest(const FString&
 	// Completed objective is terminal and cannot accept further modifications
 	TestFalse(TEXT("Adding progress to a Completed objective must be rejected"), QuestSub->AddObjectiveProgress(QuestId, ObjId, 2));
 	TestEqual(TEXT("Progress remains clamped at 10"), QuestSub->GetObjectiveProgress(QuestId, ObjId), 10);
+
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Step 48: Quest Definition Content Pipeline Integration Tests
+// -----------------------------------------------------------------------------
+
+namespace
+{
+	UShadowSlaveQuestDefinition* CreateTestQuestDefinition(UObject* Outer = nullptr)
+	{
+		UShadowSlaveQuestDefinition* Def = NewObject<UShadowSlaveQuestDefinition>(Outer ? Outer : GetTransientPackage());
+		Def->ContentId = FName(TEXT("Quest_Test_Archetype"));
+		Def->DisplayName = FText::FromString(TEXT("Test Quest"));
+		Def->Description = FText::FromString(TEXT("Test Quest Description"));
+		Def->Version = 1;
+		Def->bAutoCompleteWhenObjectivesComplete = true;
+
+		FShadowSlaveObjectiveDefinition Obj;
+		Obj.ObjectiveId = FName(TEXT("Obj_Test_Primary"));
+		Obj.Description = FText::FromString(TEXT("Test Objective"));
+		Obj.Type = EShadowSlaveObjectiveType::ReachLocation;
+		Obj.RequiredQuantity = 1;
+		Obj.bIsOptional = false;
+		Def->Objectives.Add(Obj);
+
+		return Def;
+	}
+}
+
+// 1. DefinitionUsesGenericContentBase Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionGenericBaseTest,
+	"ShadowSlave.QuestDefinition.DefinitionUsesGenericContentBase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionGenericBaseTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveQuestDefinition* QuestDef = NewObject<UShadowSlaveQuestDefinition>();
+	TestNotNull(TEXT("Quest definition must instantiate"), QuestDef);
+	if (!QuestDef)
+	{
+		return false;
+	}
+
+	// 1. Must inherit from UShadowSlaveContentDefinition
+	UShadowSlaveContentDefinition* ContentBase = Cast<UShadowSlaveContentDefinition>(QuestDef);
+	TestNotNull(TEXT("UShadowSlaveQuestDefinition must inherit from UShadowSlaveContentDefinition"), ContentBase);
+
+	// 2. Base content fields must be accessible and correctly initialized
+	TestEqual(TEXT("Initial ContentId must be NAME_None"), QuestDef->ContentId, NAME_None);
+	TestEqual(TEXT("Initial ContentType must be Quest"), QuestDef->ContentType, EShadowSlaveContentType::Quest);
+	TestEqual(TEXT("Initial Version must be 1"), QuestDef->Version, 1);
+	TestTrue(TEXT("Initial MetadataTags must be empty"), QuestDef->MetadataTags.IsEmpty());
+	TestTrue(TEXT("Initial ProvenanceNote must be empty"), QuestDef->ProvenanceNote.IsEmpty());
+
+	return true;
+}
+
+// 2. DefinitionUsesQuestContentType Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionContentTypeTest,
+	"ShadowSlave.QuestDefinition.DefinitionUsesQuestContentType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionContentTypeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveQuestDefinition* QuestDef = NewObject<UShadowSlaveQuestDefinition>();
+	TestNotNull(TEXT("Quest definition must instantiate"), QuestDef);
+	if (!QuestDef)
+	{
+		return false;
+	}
+
+	// 1. Generic ContentType must be Quest
+	TestEqual(TEXT("Generic ContentType must be EShadowSlaveContentType::Quest"),
+		QuestDef->ContentType, EShadowSlaveContentType::Quest);
+
+	// 2. Primary Asset Type must be "Quest"
+	QuestDef->ContentId = FName(TEXT("Test_Quest_Identity"));
+	const FPrimaryAssetId AssetId = QuestDef->GetPrimaryAssetId();
+	TestEqual(TEXT("PrimaryAssetType must be 'Quest'"), AssetId.PrimaryAssetType, FPrimaryAssetType(TEXT("Quest")));
+	TestEqual(TEXT("PrimaryAssetName must match ContentId"), AssetId.PrimaryAssetName, FName(TEXT("Test_Quest_Identity")));
+
+	return true;
+}
+
+// 3. DefinitionHasSingleAuthoritativeId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionSingleAuthoritativeIdTest,
+	"ShadowSlave.QuestDefinition.DefinitionHasSingleAuthoritativeId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionSingleAuthoritativeIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveQuestDefinition* QuestDef = NewObject<UShadowSlaveQuestDefinition>();
+	TestNotNull(TEXT("Quest definition must instantiate"), QuestDef);
+	if (!QuestDef)
+	{
+		return false;
+	}
+
+	const FName IdA(TEXT("Quest_First_Trial"));
+	const FName IdB(TEXT("Quest_Shadow_Descent"));
+
+	// 1. Direct ContentId mutation is reflected in GetQuestId()
+	QuestDef->ContentId = IdA;
+	TestEqual(TEXT("GetQuestId must reflect ContentId"), QuestDef->GetQuestId(), IdA);
+
+	// 2. SetQuestId mutates ContentId
+	QuestDef->SetQuestId(IdB);
+	TestEqual(TEXT("ContentId must be updated by SetQuestId"), QuestDef->ContentId, IdB);
+	TestEqual(TEXT("GetQuestId must return updated ID"), QuestDef->GetQuestId(), IdB);
+
+	// 3. PrimaryAssetId uses the single authoritative ContentId
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Quest"), IdB);
+	TestEqual(TEXT("PrimaryAssetId must match FPrimaryAssetId('Quest', ContentId)"),
+		QuestDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 4. DefinitionValidation Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionValidationTest,
+	"ShadowSlave.QuestDefinition.DefinitionValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionValidationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveQuestDefinition* ValidDef = CreateTestQuestDefinition();
+	TestNotNull(TEXT("Test quest definition must instantiate"), ValidDef);
+	if (!ValidDef)
+	{
+		return false;
+	}
+
+	FString ErrorMsg;
+	TArray<FText> OutErrors;
+
+	// 1. Valid definition passes IsValidDefinition and ValidateDefinition
+	TestTrue(TEXT("Valid definition must pass IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestTrue(TEXT("Valid definition must pass ValidateDefinition"), ValidDef->ValidateDefinition(OutErrors));
+	TestEqual(TEXT("OutErrors must be empty on valid definition"), OutErrors.Num(), 0);
+
+	// 2. Generic validation: ContentId None fails
+	ValidDef->ContentId = NAME_None;
+	TestFalse(TEXT("None ContentId must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestFalse(TEXT("Error message must not be empty on failure"), ErrorMsg.IsEmpty());
+	ValidDef->ContentId = FName(TEXT("Quest_Test_Archetype"));
+
+	// 3. Generic validation: Empty DisplayName fails
+	ValidDef->DisplayName = FText::GetEmpty();
+	TestFalse(TEXT("Empty DisplayName must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->DisplayName = FText::FromString(TEXT("Test Quest"));
+
+	// 4. Generic validation: Version < 1 fails
+	ValidDef->Version = 0;
+	TestFalse(TEXT("Version 0 must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Version = 1;
+
+	// 5. Generic validation: Wrong ContentType fails
+	ValidDef->ContentType = EShadowSlaveContentType::Item;
+	TestFalse(TEXT("Wrong ContentType must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->ContentType = EShadowSlaveContentType::Quest;
+
+	// 6. Quest-specific validation: Empty Objectives fails
+	TArray<FShadowSlaveObjectiveDefinition> SavedObjectives = ValidDef->Objectives;
+	ValidDef->Objectives.Empty();
+	TestFalse(TEXT("Empty objectives must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Objectives = SavedObjectives;
+
+	// 7. Quest-specific validation: Objective with None ID fails
+	ValidDef->Objectives[0].ObjectiveId = NAME_None;
+	TestFalse(TEXT("Objective with None ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Objectives = SavedObjectives;
+
+	// 8. Quest-specific validation: Duplicate objective IDs fail
+	ValidDef->Objectives.Add(ValidDef->Objectives[0]);
+	TestFalse(TEXT("Duplicate objective ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Objectives = SavedObjectives;
+
+	// 9. Quest-specific validation: Objective RequiredQuantity < 1 fails
+	ValidDef->Objectives[0].RequiredQuantity = 0;
+	TestFalse(TEXT("Objective with 0 RequiredQuantity must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Objectives = SavedObjectives;
+
+	// 10. Quest-specific validation: Prerequisite with None ID fails
+	ValidDef->PrerequisiteQuestIds.Add(NAME_None);
+	TestFalse(TEXT("Prerequisite with None ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteQuestIds.Empty();
+
+	// 11. Quest-specific validation: Self-prerequisite fails
+	ValidDef->PrerequisiteQuestIds.Add(ValidDef->ContentId);
+	TestFalse(TEXT("Self-prerequisite must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteQuestIds.Empty();
+
+	// 12. Quest-specific validation: Duplicate prerequisite fails
+	ValidDef->PrerequisiteQuestIds.Add(FName(TEXT("Other_Quest")));
+	ValidDef->PrerequisiteQuestIds.Add(FName(TEXT("Other_Quest")));
+	TestFalse(TEXT("Duplicate prerequisite must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteQuestIds.Empty();
+
+	// Restored definition passes again
+	TestTrue(TEXT("Restored definition passes IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	return true;
+}
+
+// 5. DefinitionRegistryIntegration Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionRegistryIntegrationTest,
+	"ShadowSlave.QuestDefinition.DefinitionRegistryIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionRegistryIntegrationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveContentRegistrySubsystem* Registry = NewObject<UShadowSlaveContentRegistrySubsystem>();
+	TestNotNull(TEXT("Registry subsystem must instantiate"), Registry);
+	if (!Registry)
+	{
+		return false;
+	}
+
+	UShadowSlaveQuestDefinition* QuestDef = CreateTestQuestDefinition();
+	TestNotNull(TEXT("Quest definition must instantiate"), QuestDef);
+	if (!QuestDef)
+	{
+		return false;
+	}
+	QuestDef->ContentId = FName(TEXT("Quest_Registry_Test"));
+
+	// 1. Register with generic registry subsystem
+	const bool bRegistered = Registry->RegisterDefinition(QuestDef);
+	TestTrue(TEXT("RegisterDefinition must succeed for UShadowSlaveQuestDefinition"), bRegistered);
+
+	// 2. Query existence & count
+	TestTrue(TEXT("HasContent must return true for registered QuestDef"), Registry->HasContent(QuestDef->ContentId));
+	TestEqual(TEXT("Total registered count must be 1"), Registry->GetRegisteredContentCount(), 1);
+	TestEqual(TEXT("Quest count by type must be 1"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Quest), 1);
+	TestEqual(TEXT("Story count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Story), 0);
+	TestEqual(TEXT("Item count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Item), 0);
+
+	// 3. Generic resolution
+	UShadowSlaveContentDefinition* ResolvedGeneric = Registry->ResolveContentDefinition(QuestDef->ContentId);
+	TestNotNull(TEXT("Resolved generic definition must not be null"), ResolvedGeneric);
+	TestEqual(TEXT("Resolved generic definition must match QuestDef"), ResolvedGeneric, Cast<UShadowSlaveContentDefinition>(QuestDef));
+
+	// 4. Typed resolution
+	UShadowSlaveQuestDefinition* ResolvedQuest = Registry->ResolveContentDefinition<UShadowSlaveQuestDefinition>(QuestDef->ContentId);
+	TestNotNull(TEXT("Resolved typed quest definition must not be null"), ResolvedQuest);
+	TestEqual(TEXT("Resolved typed quest must match original QuestDef"), ResolvedQuest, QuestDef);
+
+	// 5. PrimaryAssetId verification: uses "Quest" type
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Quest"), QuestDef->ContentId);
+	TestEqual(TEXT("GetPrimaryAssetId must match expected PrimaryAssetId with Quest type"),
+		QuestDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 6. ExistingRuntimeCompatibility Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveQuestDefinitionExistingRuntimeCompatibilityTest,
+	"ShadowSlave.QuestDefinition.ExistingRuntimeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveQuestDefinitionExistingRuntimeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveQuestSubsystem* QuestSub = NewObject<UShadowSlaveQuestSubsystem>();
+	TestNotNull(TEXT("QuestSubsystem must instantiate"), QuestSub);
+	if (!QuestSub)
+	{
+		return false;
+	}
+
+	UShadowSlaveQuestDefinition* QuestDef = CreateTestQuestDefinition();
+	TestNotNull(TEXT("Test quest definition must instantiate"), QuestDef);
+	if (!QuestDef)
+	{
+		return false;
+	}
+
+	QuestDef->SetQuestId(FName(TEXT("Quest_Runtime_Compat")));
+
+	// 1. Register definition with QuestSubsystem
+	TestTrue(TEXT("RegisterQuestDefinition must succeed"), QuestSub->RegisterQuestDefinition(QuestDef));
+	TestTrue(TEXT("HasQuestDefinition must return true"), QuestSub->HasQuestDefinition(QuestDef->GetQuestId()));
+	TestEqual(TEXT("GetQuestDefinition must return QuestDef"), QuestSub->GetQuestDefinition(QuestDef->GetQuestId()), QuestDef);
+
+	// 2. Initial state without prerequisites is Available
+	TestEqual(TEXT("Initial quest state must be Available"), QuestSub->GetQuestState(QuestDef->GetQuestId()), EShadowSlaveQuestState::Available);
+
+	// 3. State transitions
+	TestTrue(TEXT("ActivateQuest must succeed"), QuestSub->ActivateQuest(QuestDef->GetQuestId()));
+	TestTrue(TEXT("IsQuestActive must return true"), QuestSub->IsQuestActive(QuestDef->GetQuestId()));
+
+	// 4. Objective progress tracking
+	const FName ObjId = QuestDef->Objectives[0].ObjectiveId;
+	TestTrue(TEXT("AddObjectiveProgress must succeed"), QuestSub->AddObjectiveProgress(QuestDef->GetQuestId(), ObjId, 1));
+	TestEqual(TEXT("Objective state must be Completed"), QuestSub->GetObjectiveState(QuestDef->GetQuestId(), ObjId), EShadowSlaveObjectiveState::Completed);
+
+	// 5. Complete quest
+	TestTrue(TEXT("CompleteQuest must succeed"), QuestSub->CompleteQuest(QuestDef->GetQuestId()));
+	TestEqual(TEXT("Quest state must be Completed"), QuestSub->GetQuestState(QuestDef->GetQuestId()), EShadowSlaveQuestState::Completed);
+	TestTrue(TEXT("IsQuestCompleted must return true"), QuestSub->IsQuestCompleted(QuestDef->GetQuestId()));
 
 	return true;
 }

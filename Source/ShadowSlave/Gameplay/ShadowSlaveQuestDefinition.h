@@ -3,17 +3,33 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Gameplay/ShadowSlaveQuestTypes.h"
 #include "ShadowSlaveQuestDefinition.generated.h"
 
 /**
  * Static primary data asset defining a quest, its objectives, prerequisites, and metadata.
- * Pure immutable definition data; zero mutable runtime progress or state.
+ * Derived from UShadowSlaveContentDefinition as part of the generic static content pipeline.
+ * Pure immutable authoring definition data; zero mutable runtime progress or state.
  * Contains strictly zero hardcoded canon story arcs or novel content.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. Specialized Content Definition: Inherits common metadata (ContentId, DisplayName, Description,
+ *    Version, MetadataTags, ProvenanceNote) from UShadowSlaveContentDefinition.
+ * 2. Single Authoritative ID: ContentId is the single authoritative stored identifier. Backwards
+ *    compatibility is provided through GetQuestId() and SetQuestId() accessors only.
+ * 3. Content Type Separation:
+ *    - Generic ContentType is statically EShadowSlaveContentType::Quest, identifying this asset as
+ *      a quest definition within the generic content pipeline.
+ *    - Primary Asset Type is "Quest", producing FPrimaryAssetId("Quest", ContentId) via generic base.
+ * 4. Quest-Specific Data: Owns ordered objectives, prerequisite quest IDs, and completion flags.
+ * 5. Runtime Separation: Cleanly separates immutable quest definitions from mutable runtime quest state
+ *    (managed by UShadowSlaveQuestSubsystem).
+ * 6. Static Infrastructure: Participates in UShadowSlaveContentRegistrySubsystem without replacing
+ *    or coupling to UShadowSlaveQuestSubsystem.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveQuestDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveQuestDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -22,23 +38,27 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/* --- Identification & Display --- */
+	/**
+	 * Validates definition configuration.
+	 * Combines generic content definition validation with quest objective and prerequisite checks.
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Stable unique technical identifier for this quest */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Identity")
-	FName QuestId = NAME_None;
+	/* --- Identity Compatibility --- */
 
-	/** Player-facing quest title */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Identity")
-	FText DisplayName;
+	/**
+	 * Returns the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Quest API.
+	 */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Quest|Identity")
+	FName GetQuestId() const { return ContentId; }
 
-	/** Player-facing quest briefing and narrative description */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Identity", meta = (MultiLine = true))
-	FText Description;
-
-	/** Content version number for compatibility and save migration */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Identity", meta = (ClampMin = "1"))
-	int32 Version = 1;
+	/**
+	 * Sets the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Quest API.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Quest|Identity")
+	void SetQuestId(FName InQuestId) { ContentId = InQuestId; }
 
 	/* --- Objectives & Flow --- */
 
@@ -57,10 +77,6 @@ public:
 	/** Extensible metadata for quest categorisation, zone tags, or narrative grouping */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Metadata")
 	TMap<FName, FString> Metadata;
-
-	/** Technical provenance and source attribution note */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Quest|Provenance")
-	FString ProvenanceNote;
 
 	/* --- Queries & Validation --- */
 

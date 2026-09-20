@@ -280,7 +280,8 @@ bool UShadowSlaveQuestSubsystem::RegisterQuestDefinition(UShadowSlaveQuestDefini
 		return false;
 	}
 
-	if (QuestDef->QuestId.IsNone())
+	const FName QuestId = QuestDef->GetQuestId();
+	if (QuestId.IsNone())
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - QuestDef has invalid None QuestId."));
 		return false;
@@ -293,13 +294,13 @@ bool UShadowSlaveQuestSubsystem::RegisterQuestDefinition(UShadowSlaveQuestDefini
 		for (const FText& Err : ValidationErrors)
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - Validation failure on quest '%s': %s"),
-				*QuestDef->QuestId.ToString(), *Err.ToString());
+				*QuestId.ToString(), *Err.ToString());
 		}
 		return false;
 	}
 
 	// Required correction 2: Reject QuestId conflicts
-	if (const TObjectPtr<UShadowSlaveQuestDefinition>* ExistingDef = RegisteredDefinitions.Find(QuestDef->QuestId))
+	if (const TObjectPtr<UShadowSlaveQuestDefinition>* ExistingDef = RegisteredDefinitions.Find(QuestId))
 	{
 		if (ExistingDef->Get() == QuestDef)
 		{
@@ -308,24 +309,24 @@ bool UShadowSlaveQuestSubsystem::RegisterQuestDefinition(UShadowSlaveQuestDefini
 		}
 
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveQuestSubsystem::RegisterQuestDefinition - Conflict: QuestId '%s' is already registered with a different definition object ('%s' vs '%s')."),
-			*QuestDef->QuestId.ToString(),
+			*QuestId.ToString(),
 			ExistingDef->Get() ? *ExistingDef->Get()->GetName() : TEXT("null"),
 			*QuestDef->GetName());
 		return false;
 	}
 
-	RegisteredDefinitions.Add(QuestDef->QuestId, QuestDef);
+	RegisteredDefinitions.Add(QuestId, QuestDef);
 
 	// If runtime state does not exist yet, initialize it
-	if (!QuestRuntimeStates.Contains(QuestDef->QuestId))
+	if (!QuestRuntimeStates.Contains(QuestId))
 	{
-		const EShadowSlaveQuestState InitialState = ArePrerequisitesSatisfied(QuestDef->QuestId)
+		const EShadowSlaveQuestState InitialState = ArePrerequisitesSatisfied(QuestId)
 			? EShadowSlaveQuestState::Available
 			: EShadowSlaveQuestState::Locked;
 
-		FShadowSlaveQuestRuntimeState NewEntry(QuestDef->QuestId, InitialState);
+		FShadowSlaveQuestRuntimeState NewEntry(QuestId, InitialState);
 		InitializeRuntimeObjectives(NewEntry, QuestDef);
-		QuestRuntimeStates.Add(QuestDef->QuestId, NewEntry);
+		QuestRuntimeStates.Add(QuestId, NewEntry);
 	}
 
 	return true;
