@@ -8,7 +8,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveCombatTests.cpp        # Combat state machine, transitions, death terminality, attack/dodge validation
 ├── ShadowSlaveInventoryTests.cpp     # Inventory capacity, stacking, atomic removal, GUID lookup, clearing, and Item definition content pipeline integration
 ├── ShadowSlaveQuestTests.cpp         # Quest registration, duplicate rejection, prerequisites, objective progress invariants, and Quest definition content pipeline integration
-├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation, and content pipeline integration
+├── ShadowSlaveStoryTests.cpp         # Story definition and story content save restore, parent/child reconciliation, prerequisite validation, and content pipeline integration
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, passive dialogue save/restore guards, and Dialogue definition content pipeline integration
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, transient state behavior, and Ability/Flaw definition content pipeline integration
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, teardown safety, and content pipeline integration
@@ -30,6 +30,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.QuestDefinition.*`
 - `ShadowSlave.Story.*`
 - `ShadowSlave.StoryContent.*`
+- `ShadowSlave.StoryDefinition.*`
 - `ShadowSlave.Dialogue.*`
 - `ShadowSlave.DialogueDefinition.*`
 - `ShadowSlave.NightmareScenarioDefinition.*`
@@ -81,3 +82,9 @@ To execute tests headlessly via command line:
 ## 5. Important Environment & Execution Notice
 - **Current Environment Status:** The agent development environment is a headless Linux container without an installed Unreal Engine 5 toolchain or C++ compiler.
 - **Execution Status:** Execution has **NOT** been verified in this container. Static code inspection and API verification have been performed, but actual runtime execution requires a local Unreal Engine 5.4 environment.
+
+## 6. Story Definition vs. Story Content Architecture
+- **StoryDefinition (`UShadowSlaveStoryDefinition`)**: Static Story-level content defining chapters, progression units, prerequisites, and ordered step IDs.
+- **StoryContentDefinition (`UShadowSlaveStoryContentDefinition`)**: Static content-entry/graph data modeling child content entries (Quests, Dialogues, Nightmares, etc.) within a story progression.
+- **Generic Pipeline Integration**: Both derive from `UShadowSlaveContentDefinition` with `ContentId` as the stable authoritative identifier and `ContentType = EShadowSlaveContentType::Story`.
+- **Runtime Separation**: `UShadowSlaveStorySubsystem` owns all mutable runtime progression states; `UShadowSlaveContentRegistrySubsystem` is used solely for static definition resolution and query.

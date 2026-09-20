@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
 #include "Story/ShadowSlaveStorySubsystem.h"
+#include "Story/ShadowSlaveStoryDefinition.h"
 #include "Story/ShadowSlaveStoryContentDefinition.h"
 #include "Story/ShadowSlaveStoryContentTypes.h"
 #include "Story/ShadowSlaveStoryTypes.h"
@@ -656,6 +657,385 @@ bool FShadowSlaveStoryContentExistingRuntimeCompatibilityTest::RunTest(const FSt
 		RestoredSub->GetStoryContentEntryState(ArcId, Entry1), EShadowSlaveStoryContentState::Completed);
 	TestEqual(TEXT("Restored subsystem preserves Entry2 Completed"),
 		RestoredSub->GetStoryContentEntryState(ArcId, Entry2), EShadowSlaveStoryContentState::Completed);
+
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Step 49: Story Definition Content Pipeline Integration Tests
+// -----------------------------------------------------------------------------
+
+// 1. DefinitionUsesGenericContentBase Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionGenericBaseTest,
+	"ShadowSlave.StoryDefinition.DefinitionUsesGenericContentBase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionGenericBaseTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	TestNotNull(TEXT("Story definition must instantiate"), StoryDef);
+	if (!StoryDef)
+	{
+		return false;
+	}
+
+	// 1. Must inherit from UShadowSlaveContentDefinition
+	UShadowSlaveContentDefinition* ContentBase = Cast<UShadowSlaveContentDefinition>(StoryDef);
+	TestNotNull(TEXT("UShadowSlaveStoryDefinition must inherit from UShadowSlaveContentDefinition"), ContentBase);
+
+	// 2. Base content fields must be accessible and correctly initialized
+	TestEqual(TEXT("Initial ContentId must be NAME_None"), StoryDef->ContentId, NAME_None);
+	TestEqual(TEXT("Initial ContentType must be Story"), StoryDef->ContentType, EShadowSlaveContentType::Story);
+	TestEqual(TEXT("Initial Version must be 1"), StoryDef->Version, 1);
+	TestTrue(TEXT("Initial MetadataTags must be empty"), StoryDef->MetadataTags.IsEmpty());
+	TestTrue(TEXT("Initial ProvenanceNote must be empty"), StoryDef->ProvenanceNote.IsEmpty());
+
+	return true;
+}
+
+// 2. DefinitionUsesStoryContentType Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionContentTypeTest,
+	"ShadowSlave.StoryDefinition.DefinitionUsesStoryContentType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionContentTypeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	TestNotNull(TEXT("Story definition must instantiate"), StoryDef);
+	if (!StoryDef)
+	{
+		return false;
+	}
+
+	// 1. Generic ContentType must be Story
+	TestEqual(TEXT("Generic ContentType must be EShadowSlaveContentType::Story"),
+		StoryDef->ContentType, EShadowSlaveContentType::Story);
+
+	// 2. Existing EShadowSlaveStoryContentType enum values remain unchanged
+	TestEqual(TEXT("StoryContentType Quest exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Quest), static_cast<uint8>(0));
+	TestEqual(TEXT("StoryContentType Dialogue exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Dialogue), static_cast<uint8>(1));
+	TestEqual(TEXT("StoryContentType Nightmare exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Nightmare), static_cast<uint8>(2));
+	TestEqual(TEXT("StoryContentType WorldState exists"), static_cast<uint8>(EShadowSlaveStoryContentType::WorldState), static_cast<uint8>(3));
+	TestEqual(TEXT("StoryContentType Location exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Location), static_cast<uint8>(4));
+	TestEqual(TEXT("StoryContentType Transition exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Transition), static_cast<uint8>(5));
+	TestEqual(TEXT("StoryContentType Custom exists"), static_cast<uint8>(EShadowSlaveStoryContentType::Custom), static_cast<uint8>(6));
+
+	// 3. Primary Asset Type must be "Story"
+	StoryDef->ContentId = FName(TEXT("Test_Story_Identity"));
+	const FPrimaryAssetId AssetId = StoryDef->GetPrimaryAssetId();
+	TestEqual(TEXT("PrimaryAssetType must be 'Story'"), AssetId.PrimaryAssetType, FPrimaryAssetType(TEXT("Story")));
+	TestEqual(TEXT("PrimaryAssetName must match ContentId"), AssetId.PrimaryAssetName, FName(TEXT("Test_Story_Identity")));
+
+	return true;
+}
+
+// 3. DefinitionHasSingleAuthoritativeId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionSingleAuthoritativeIdTest,
+	"ShadowSlave.StoryDefinition.DefinitionHasSingleAuthoritativeId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionSingleAuthoritativeIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	TestNotNull(TEXT("Story definition must instantiate"), StoryDef);
+	if (!StoryDef)
+	{
+		return false;
+	}
+
+	const FName IdA(TEXT("Story_First_Trial"));
+	const FName IdB(TEXT("Story_Dark_City"));
+
+	// 1. Direct ContentId mutation is reflected in GetStoryId()
+	StoryDef->ContentId = IdA;
+	TestEqual(TEXT("GetStoryId must reflect ContentId"), StoryDef->GetStoryId(), IdA);
+
+	// 2. SetStoryId mutates ContentId
+	StoryDef->SetStoryId(IdB);
+	TestEqual(TEXT("ContentId must be updated by SetStoryId"), StoryDef->ContentId, IdB);
+	TestEqual(TEXT("GetStoryId must return updated ID"), StoryDef->GetStoryId(), IdB);
+
+	// 3. PrimaryAssetId uses the single authoritative ContentId
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Story"), IdB);
+	TestEqual(TEXT("PrimaryAssetId must match FPrimaryAssetId('Story', ContentId)"),
+		StoryDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 4. DefinitionValidation Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionValidationTest,
+	"ShadowSlave.StoryDefinition.DefinitionValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionValidationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStoryDefinition* ValidDef = NewObject<UShadowSlaveStoryDefinition>();
+	TestNotNull(TEXT("Test story definition must instantiate"), ValidDef);
+	if (!ValidDef)
+	{
+		return false;
+	}
+
+	ValidDef->ContentId = FName(TEXT("Story_Test_Arc"));
+	ValidDef->DisplayName = FText::FromString(TEXT("Test Story Arc"));
+	ValidDef->Description = FText::FromString(TEXT("Test Story Description"));
+	ValidDef->Version = 1;
+	ValidDef->StepIds.Add(FName(TEXT("Step_01")));
+
+	FString ErrorMsg;
+	TArray<FText> OutErrors;
+
+	// 1. Valid definition passes IsValidDefinition and ValidateDefinition
+	TestTrue(TEXT("Valid definition must pass IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestTrue(TEXT("Valid definition must pass ValidateDefinition"), ValidDef->ValidateDefinition(OutErrors));
+	TestEqual(TEXT("OutErrors must be empty on valid definition"), OutErrors.Num(), 0);
+
+	// 2. Generic validation: ContentId None fails
+	ValidDef->ContentId = NAME_None;
+	TestFalse(TEXT("None ContentId must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestFalse(TEXT("Error message must not be empty on failure"), ErrorMsg.IsEmpty());
+	ValidDef->ContentId = FName(TEXT("Story_Test_Arc"));
+
+	// 3. Generic validation: Empty DisplayName fails
+	ValidDef->DisplayName = FText::GetEmpty();
+	TestFalse(TEXT("Empty DisplayName must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->DisplayName = FText::FromString(TEXT("Test Story Arc"));
+
+	// 4. Generic validation: Version < 1 fails
+	ValidDef->Version = 0;
+	TestFalse(TEXT("Version 0 must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Version = 1;
+
+	// 5. Generic validation: Wrong ContentType fails
+	ValidDef->ContentType = EShadowSlaveContentType::Quest;
+	TestFalse(TEXT("Wrong ContentType must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->ContentType = EShadowSlaveContentType::Story;
+
+	// 6. Story-specific validation: Prerequisite with None ID fails
+	ValidDef->PrerequisiteStoryIds.Add(NAME_None);
+	TestFalse(TEXT("Prerequisite with None ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteStoryIds.Empty();
+
+	// 7. Story-specific validation: Self-prerequisite fails
+	ValidDef->PrerequisiteStoryIds.Add(ValidDef->ContentId);
+	TestFalse(TEXT("Self-prerequisite must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteStoryIds.Empty();
+
+	// 8. Story-specific validation: Duplicate prerequisite fails
+	ValidDef->PrerequisiteStoryIds.Add(FName(TEXT("Other_Story")));
+	ValidDef->PrerequisiteStoryIds.Add(FName(TEXT("Other_Story")));
+	TestFalse(TEXT("Duplicate prerequisite must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->PrerequisiteStoryIds.Empty();
+
+	// 9. Story-specific validation: Step with None ID fails
+	ValidDef->StepIds.Add(NAME_None);
+	TestFalse(TEXT("Step with None ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->StepIds.Empty();
+	ValidDef->StepIds.Add(FName(TEXT("Step_01")));
+
+	// 10. Story-specific validation: Duplicate step ID fails
+	ValidDef->StepIds.Add(FName(TEXT("Step_01")));
+	TestFalse(TEXT("Duplicate step ID must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->StepIds.Empty();
+	ValidDef->StepIds.Add(FName(TEXT("Step_01")));
+
+	// Restored definition passes again
+	TestTrue(TEXT("Restored definition passes IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	return true;
+}
+
+// 5. DefinitionRegistryIntegration Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionRegistryIntegrationTest,
+	"ShadowSlave.StoryDefinition.DefinitionRegistryIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionRegistryIntegrationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveContentRegistrySubsystem* Registry = NewObject<UShadowSlaveContentRegistrySubsystem>();
+	TestNotNull(TEXT("Registry subsystem must instantiate"), Registry);
+	if (!Registry)
+	{
+		return false;
+	}
+
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	TestNotNull(TEXT("Story definition must instantiate"), StoryDef);
+	if (!StoryDef)
+	{
+		return false;
+	}
+	StoryDef->ContentId = FName(TEXT("Story_Registry_Test"));
+	StoryDef->DisplayName = FText::FromString(TEXT("Registry Test Story"));
+	StoryDef->Description = FText::FromString(TEXT("Registry Test Description"));
+	StoryDef->Version = 1;
+
+	// 1. Register with generic registry subsystem
+	const bool bRegistered = Registry->RegisterDefinition(StoryDef);
+	TestTrue(TEXT("RegisterDefinition must succeed for UShadowSlaveStoryDefinition"), bRegistered);
+
+	// 2. Query existence & count
+	TestTrue(TEXT("HasContent must return true for registered StoryDef"), Registry->HasContent(StoryDef->ContentId));
+	TestEqual(TEXT("Total registered count must be 1"), Registry->GetRegisteredContentCount(), 1);
+	TestEqual(TEXT("Story count by type must be 1"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Story), 1);
+	TestEqual(TEXT("Quest count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Quest), 0);
+	TestEqual(TEXT("Item count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Item), 0);
+
+	// 3. Generic resolution
+	UShadowSlaveContentDefinition* ResolvedGeneric = Registry->ResolveContentDefinition(StoryDef->ContentId);
+	TestNotNull(TEXT("Resolved generic definition must not be null"), ResolvedGeneric);
+	TestEqual(TEXT("Resolved generic definition must match StoryDef"), ResolvedGeneric, Cast<UShadowSlaveContentDefinition>(StoryDef));
+
+	// 4. Typed resolution
+	UShadowSlaveStoryDefinition* ResolvedStory = Registry->ResolveContentDefinition<UShadowSlaveStoryDefinition>(StoryDef->ContentId);
+	TestNotNull(TEXT("Resolved typed story definition must not be null"), ResolvedStory);
+	TestEqual(TEXT("Resolved typed story must match original StoryDef"), ResolvedStory, StoryDef);
+
+	// 5. PrimaryAssetId verification: uses "Story" type
+	const FPrimaryAssetId ExpectedAssetId(TEXT("Story"), StoryDef->ContentId);
+	TestEqual(TEXT("GetPrimaryAssetId must match expected PrimaryAssetId with Story type"),
+		StoryDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 6. ExistingRuntimeCompatibility Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionExistingRuntimeCompatibilityTest,
+	"ShadowSlave.StoryDefinition.ExistingRuntimeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionExistingRuntimeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStorySubsystem* StorySub = NewObject<UShadowSlaveStorySubsystem>();
+	TestNotNull(TEXT("StorySubsystem must instantiate"), StorySub);
+	if (!StorySub)
+	{
+		return false;
+	}
+
+	const FName StoryId = FName(TEXT("Story_Runtime_Compat"));
+	const FName Step1 = FName(TEXT("Step_Compat_1"));
+	const FName Step2 = FName(TEXT("Step_Compat_2"));
+
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	StoryDef->SetStoryId(StoryId);
+	StoryDef->DisplayName = FText::FromString(TEXT("Runtime Compat Story"));
+	StoryDef->Description = FText::FromString(TEXT("Runtime Compat Description"));
+	StoryDef->Version = 1;
+	StoryDef->StepIds.Add(Step1);
+	StoryDef->StepIds.Add(Step2);
+
+	// 1. Register definition with StorySubsystem
+	TestTrue(TEXT("RegisterStoryDefinition must succeed"), StorySub->RegisterStoryDefinition(StoryDef));
+	TestTrue(TEXT("HasStoryDefinition must return true"), StorySub->HasStoryDefinition(StoryDef->GetStoryId()));
+	TestEqual(TEXT("GetStoryDefinition must return StoryDef"), StorySub->GetStoryDefinition(StoryDef->GetStoryId()), StoryDef);
+
+	// 2. Initial state without prerequisites is Available
+	TestEqual(TEXT("Initial story state must be Available"), StorySub->GetStoryState(StoryDef->GetStoryId()), EShadowSlaveStoryState::Available);
+
+	// 3. State transitions
+	TestTrue(TEXT("ActivateStory must succeed"), StorySub->ActivateStory(StoryDef->GetStoryId()));
+	TestTrue(TEXT("IsStoryActive must return true"), StorySub->IsStoryActive(StoryDef->GetStoryId()));
+
+	// 4. Step progression
+	TestTrue(TEXT("SetCurrentStoryStep to Step1 succeeds"), StorySub->SetCurrentStoryStep(StoryDef->GetStoryId(), Step1));
+	TestEqual(TEXT("Current step is Step1"), StorySub->GetCurrentStoryStep(StoryDef->GetStoryId()), Step1);
+	TestTrue(TEXT("SetCurrentStoryStep to Step2 succeeds"), StorySub->SetCurrentStoryStep(StoryDef->GetStoryId(), Step2));
+	TestEqual(TEXT("Current step is Step2"), StorySub->GetCurrentStoryStep(StoryDef->GetStoryId()), Step2);
+
+	// 5. Save/Load export and restore
+	FShadowSlaveStorySaveData SaveData = StorySub->ExportSaveData();
+	TestTrue(TEXT("ExportSaveData produces valid save"), SaveData.bIsValid);
+
+	const FShadowSlaveStoryRecordSaveData* FoundRecord = SaveData.Stories.FindByPredicate(
+		[&StoryDef](const FShadowSlaveStoryRecordSaveData& Rec) {
+			return Rec.StoryId == StoryDef->GetStoryId();
+		}
+	);
+	TestNotNull(TEXT("Saved story record must be present"), FoundRecord);
+	if (FoundRecord)
+	{
+		TestEqual(TEXT("Saved StoryId matches GetStoryId()"), FoundRecord->StoryId, StoryDef->GetStoryId());
+		TestEqual(TEXT("Saved State is Active"), FoundRecord->State, EShadowSlaveStoryState::Active);
+		TestEqual(TEXT("Saved CurrentStepId is Step2"), FoundRecord->CurrentStepId, Step2);
+	}
+
+	UShadowSlaveStorySubsystem* RestoredSub = NewObject<UShadowSlaveStorySubsystem>();
+	RestoredSub->RegisterStoryDefinition(StoryDef);
+	TestTrue(TEXT("ImportSaveData succeeds on restored subsystem"), RestoredSub->ImportSaveData(SaveData));
+	TestTrue(TEXT("Restored subsystem preserves Active state"), RestoredSub->IsStoryActive(StoryDef->GetStoryId()));
+	TestEqual(TEXT("Restored subsystem preserves current step"), RestoredSub->GetCurrentStoryStep(StoryDef->GetStoryId()), Step2);
+
+	// 6. Complete story
+	TestTrue(TEXT("CompleteStory must succeed"), StorySub->CompleteStory(StoryDef->GetStoryId()));
+	TestEqual(TEXT("Story state must be Completed"), StorySub->GetStoryState(StoryDef->GetStoryId()), EShadowSlaveStoryState::Completed);
+	TestTrue(TEXT("IsStoryCompleted must return true"), StorySub->IsStoryCompleted(StoryDef->GetStoryId()));
+
+	return true;
+}
+
+// 7. StoryAndStoryContentRemainDistinct Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStoryDefinitionAndContentDistinctTest,
+	"ShadowSlave.StoryDefinition.StoryAndStoryContentRemainDistinct",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStoryDefinitionAndContentDistinctTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStoryDefinition* StoryDef = NewObject<UShadowSlaveStoryDefinition>();
+	UShadowSlaveStoryContentDefinition* ContentDef = NewObject<UShadowSlaveStoryContentDefinition>();
+
+	TestNotNull(TEXT("StoryDef must instantiate"), StoryDef);
+	TestNotNull(TEXT("ContentDef must instantiate"), ContentDef);
+	if (!StoryDef || !ContentDef)
+	{
+		return false;
+	}
+
+	// 1. Verify they are separate distinct classes
+	TestTrue(TEXT("StoryDefinition and StoryContentDefinition must be distinct classes"),
+		StoryDef->GetClass() != ContentDef->GetClass());
+	TestFalse(TEXT("StoryDefinition must not be an instance of StoryContentDefinition"),
+		StoryDef->IsA<UShadowSlaveStoryContentDefinition>());
+	TestFalse(TEXT("StoryContentDefinition must not be an instance of StoryDefinition"),
+		ContentDef->IsA<UShadowSlaveStoryDefinition>());
+
+	// 2. Both derive from UShadowSlaveContentDefinition
+	TestNotNull(TEXT("StoryDef must derive from UShadowSlaveContentDefinition"),
+		Cast<UShadowSlaveContentDefinition>(StoryDef));
+	TestNotNull(TEXT("ContentDef must derive from UShadowSlaveContentDefinition"),
+		Cast<UShadowSlaveContentDefinition>(ContentDef));
+
+	// 3. Both report EShadowSlaveContentType::Story
+	TestEqual(TEXT("StoryDef generic ContentType is Story"),
+		StoryDef->ContentType, EShadowSlaveContentType::Story);
+	TestEqual(TEXT("ContentDef generic ContentType is Story"),
+		ContentDef->ContentType, EShadowSlaveContentType::Story);
+
+	// 4. StoryContentDefinition still owns its own distinct content entries and taxonomy
+	FShadowSlaveStoryContentEntry Entry;
+	Entry.ContentId = FName(TEXT("Test_Entry_Unique"));
+	Entry.ContentType = EShadowSlaveStoryContentType::Quest;
+	Entry.TargetId = FName(TEXT("Quest_Target_01"));
+	ContentDef->ContentEntries.Add(Entry);
+
+	TestEqual(TEXT("ContentDef owns ContentEntries"), ContentDef->ContentEntries.Num(), 1);
+	TestEqual(TEXT("Entry has EShadowSlaveStoryContentType::Quest"),
+		ContentDef->ContentEntries[0].ContentType, EShadowSlaveStoryContentType::Quest);
 
 	return true;
 }

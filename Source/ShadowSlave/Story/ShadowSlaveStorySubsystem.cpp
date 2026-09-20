@@ -954,7 +954,8 @@ bool UShadowSlaveStorySubsystem::RegisterStoryDefinition(UShadowSlaveStoryDefini
 		return false;
 	}
 
-	if (StoryDef->StoryId.IsNone())
+	const FName StoryId = StoryDef->GetStoryId();
+	if (StoryId.IsNone())
 	{
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryDefinition - StoryDef has invalid None StoryId."));
 		return false;
@@ -966,12 +967,12 @@ bool UShadowSlaveStorySubsystem::RegisterStoryDefinition(UShadowSlaveStoryDefini
 		for (const FText& Err : ValidationErrors)
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryDefinition - Validation failure on '%s': %s"),
-				*StoryDef->StoryId.ToString(), *Err.ToString());
+				*StoryId.ToString(), *Err.ToString());
 		}
 		return false;
 	}
 
-	if (const TObjectPtr<UShadowSlaveStoryDefinition>* Existing = RegisteredDefinitions.Find(StoryDef->StoryId))
+	if (const TObjectPtr<UShadowSlaveStoryDefinition>* Existing = RegisteredDefinitions.Find(StoryId))
 	{
 		if (Existing->Get() == StoryDef)
 		{
@@ -980,22 +981,22 @@ bool UShadowSlaveStorySubsystem::RegisterStoryDefinition(UShadowSlaveStoryDefini
 		}
 
 		UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveStorySubsystem::RegisterStoryDefinition - Conflict: StoryId '%s' already registered with different definition object ('%s' vs '%s')."),
-			*StoryDef->StoryId.ToString(),
+			*StoryId.ToString(),
 			Existing->Get() ? *Existing->Get()->GetName() : TEXT("null"),
 			*StoryDef->GetName());
 		return false;
 	}
 
-	RegisteredDefinitions.Add(StoryDef->StoryId, StoryDef);
+	RegisteredDefinitions.Add(StoryId, StoryDef);
 
 	// If runtime state does not exist yet, initialize it
-	if (!StoryRuntimeStates.Contains(StoryDef->StoryId))
+	if (!StoryRuntimeStates.Contains(StoryId))
 	{
-		const EShadowSlaveStoryState InitialState = ArePrerequisitesSatisfied(StoryDef->StoryId)
+		const EShadowSlaveStoryState InitialState = ArePrerequisitesSatisfied(StoryId)
 			? EShadowSlaveStoryState::Available
 			: EShadowSlaveStoryState::Locked;
 
-		StoryRuntimeStates.Add(StoryDef->StoryId, FShadowSlaveStoryRuntimeState(StoryDef->StoryId, InitialState));
+		StoryRuntimeStates.Add(StoryId, FShadowSlaveStoryRuntimeState(StoryId, InitialState));
 	}
 
 	return true;
