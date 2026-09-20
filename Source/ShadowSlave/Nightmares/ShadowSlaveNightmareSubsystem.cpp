@@ -105,8 +105,8 @@ bool UShadowSlaveNightmareSubsystem::StartScenario(UShadowSlaveNightmareScenario
 	}
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' (v%d) is now ACTIVE."),
-		*ScenarioDef->ScenarioId.ToString(),
-		ScenarioDef->ScenarioVersion
+		*ScenarioDef->GetScenarioId().ToString(),
+		ScenarioDef->GetScenarioVersion()
 	);
 
 	OnScenarioStarted.Broadcast(ActiveScenarioDefinition);
@@ -156,7 +156,7 @@ bool UShadowSlaveNightmareSubsystem::CompleteScenario()
 	}
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' COMPLETED."),
-		ActiveScenarioDefinition ? *ActiveScenarioDefinition->ScenarioId.ToString() : TEXT("Unknown")
+		ActiveScenarioDefinition ? *ActiveScenarioDefinition->GetScenarioId().ToString() : TEXT("Unknown")
 	);
 
 	OnScenarioCompleted.Broadcast(ActiveScenarioDefinition);
@@ -183,7 +183,7 @@ bool UShadowSlaveNightmareSubsystem::FailScenario(EShadowSlaveScenarioFailureRea
 	}
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' FAILED (Reason: %d)."),
-		ActiveScenarioDefinition ? *ActiveScenarioDefinition->ScenarioId.ToString() : TEXT("Unknown"),
+		ActiveScenarioDefinition ? *ActiveScenarioDefinition->GetScenarioId().ToString() : TEXT("Unknown"),
 		static_cast<int32>(Reason)
 	);
 
@@ -212,7 +212,7 @@ bool UShadowSlaveNightmareSubsystem::AbortScenario()
 	}
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' ABORTED."),
-		ActiveScenarioDefinition ? *ActiveScenarioDefinition->ScenarioId.ToString() : TEXT("Unknown")
+		ActiveScenarioDefinition ? *ActiveScenarioDefinition->GetScenarioId().ToString() : TEXT("Unknown")
 	);
 
 	OnScenarioAborted.Broadcast(ActiveScenarioDefinition);
@@ -242,7 +242,7 @@ bool UShadowSlaveNightmareSubsystem::BeginExitScenario()
 	}
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' beginning exit sequence."),
-		ActiveScenarioDefinition ? *ActiveScenarioDefinition->ScenarioId.ToString() : TEXT("Unknown")
+		ActiveScenarioDefinition ? *ActiveScenarioDefinition->GetScenarioId().ToString() : TEXT("Unknown")
 	);
 
 	OnScenarioExiting.Broadcast(ActiveScenarioDefinition);
@@ -272,12 +272,12 @@ bool UShadowSlaveNightmareSubsystem::FinishExitScenario()
 
 FName UShadowSlaveNightmareSubsystem::GetCurrentScenarioId() const
 {
-	return ActiveScenarioDefinition ? ActiveScenarioDefinition->ScenarioId : NAME_None;
+	return ActiveScenarioDefinition ? ActiveScenarioDefinition->GetScenarioId() : NAME_None;
 }
 
 int32 UShadowSlaveNightmareSubsystem::GetCurrentScenarioVersion() const
 {
-	return ActiveScenarioDefinition ? ActiveScenarioDefinition->ScenarioVersion : 0;
+	return ActiveScenarioDefinition ? ActiveScenarioDefinition->GetScenarioVersion() : 0;
 }
 
 void UShadowSlaveNightmareSubsystem::SetParticipatingPlayer(APlayerController* InPC, APawn* InPawn)
@@ -307,7 +307,7 @@ bool UShadowSlaveNightmareSubsystem::RequestScenarioWorldTransition()
 	if (ActiveScenarioDefinition->ScenarioMap.IsNull())
 	{
 		UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareSubsystem: Scenario '%s' defines no world map; executing within current world context."),
-			*ActiveScenarioDefinition->ScenarioId.ToString()
+			*ActiveScenarioDefinition->GetScenarioId().ToString()
 		);
 		return false;
 	}
@@ -442,8 +442,8 @@ FShadowSlaveNightmareSaveData UShadowSlaveNightmareSubsystem::ExportSaveData() c
 	}
 	else if (ActiveScenarioDefinition)
 	{
-		SaveData.ScenarioId = ActiveScenarioDefinition->ScenarioId;
-		SaveData.ScenarioVersion = ActiveScenarioDefinition->ScenarioVersion;
+		SaveData.ScenarioId = ActiveScenarioDefinition->GetScenarioId();
+		SaveData.ScenarioVersion = ActiveScenarioDefinition->GetScenarioVersion();
 		SaveData.ScenarioMetadata = ActiveScenarioDefinition->ScenarioMetadata;
 		SaveData.SessionState = CurrentSessionState;
 		SaveData.FailureReason = ActiveFailureReason;
@@ -498,12 +498,12 @@ bool UShadowSlaveNightmareSubsystem::ImportSaveData(const FShadowSlaveNightmareS
 	}
 
 	// 3. Validate Scenario Version
-	if (InSaveData.ScenarioVersion != ResolvedDef->ScenarioVersion)
+	if (InSaveData.ScenarioVersion != ResolvedDef->GetScenarioVersion())
 	{
 		UE_LOG(LogShadowSlave, Error, TEXT("UShadowSlaveNightmareSubsystem::ImportSaveData: Incompatible scenario version %d for '%s' (definition version is %d). Rejecting save."),
 			InSaveData.ScenarioVersion,
 			*InSaveData.ScenarioId.ToString(),
-			ResolvedDef->ScenarioVersion
+			ResolvedDef->GetScenarioVersion()
 		);
 		return false;
 	}

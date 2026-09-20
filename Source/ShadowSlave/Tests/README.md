@@ -17,6 +17,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveContentRegistryTests.cpp # Generic content data asset registration, soft reference resolution, duplicate rejection, and decoupled architecture
 ├── ShadowSlaveMemoryTests.cpp        # Memory definition content pipeline integration, inheritance, single authoritative ID, validation, and runtime compatibility
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
+├── ShadowSlaveNightmareTests.cpp     # Nightmare Scenario definition content pipeline integration, inheritance, validation, and session lifecycle
 └── README.md                         # Documentation and discovery guide
 ```
 
@@ -30,6 +31,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.StoryContent.*`
 - `ShadowSlave.Dialogue.*`
 - `ShadowSlave.DialogueDefinition.*`
+- `ShadowSlave.NightmareScenarioDefinition.*`
 - `ShadowSlave.Aspects.*`
 - `ShadowSlave.AbilityDefinition.*`
 - `ShadowSlave.FlawDefinition.*`

@@ -2662,8 +2662,8 @@ void UShadowSlaveQuestSubsystem::HandleSelfQuestCompleted(FName CompletedQuestId
 
 void UShadowSlaveQuestSubsystem::HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
 {
-	if (ScenarioDef && !ScenarioDef->ScenarioId.IsNone())
+	if (ScenarioDef && !ScenarioDef->GetScenarioId().IsNone())
 	{
-		NotifySurvivalCompleted(ScenarioDef->ScenarioId);
+		NotifySurvivalCompleted(ScenarioDef->GetScenarioId());
 	}
 }

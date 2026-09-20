@@ -4,29 +4,74 @@
 #include "UObject/Package.h"
 
 UShadowSlaveNightmareScenarioDefinition::UShadowSlaveNightmareScenarioDefinition()
+	: UShadowSlaveContentDefinition()
 {
-	ScenarioId = NAME_None;
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Custom;
 	DisplayName = FText::GetEmpty();
 	Description = FText::GetEmpty();
-	ScenarioVersion = 1;
+	Version = 1;
 	CompletionRule = EShadowSlaveScenarioCompletionRule::AllRequiredObjectives;
 }
 
 FPrimaryAssetId UShadowSlaveNightmareScenarioDefinition::GetPrimaryAssetId() const
 {
-	const FName AssetIdentifier = ScenarioId.IsNone() ? GetFName() : ScenarioId;
-	return FPrimaryAssetId(TEXT("NightmareScenario"), AssetIdentifier);
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveNightmareScenarioDefinition::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content type must be Custom
+	if (ContentType != EShadowSlaveContentType::Custom)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Nightmare scenario definition '%s' must have ContentType == EShadowSlaveContentType::Custom."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Generic display name must not be empty
+	if (DisplayName.IsEmpty())
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Nightmare scenario definition '%s' must have a non-empty DisplayName."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 4. Nightmare scenario specific validation
+	FText ScenarioError;
+	if (!ValidateScenario(ScenarioError))
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = ScenarioError.ToString();
+		}
+		return false;
+	}
+
+	return true;
 }
 
 bool UShadowSlaveNightmareScenarioDefinition::ValidateScenario(FText& OutError) const
 {
-	if (ScenarioId.IsNone())
+	if (ContentId.IsNone())
 	{
 		OutError = FText::FromString(TEXT("Validation Failed: ScenarioId cannot be None."));
 		return false;
 	}
 
-	if (ScenarioVersion <= 0)
+	if (Version <= 0)
 	{
 		OutError = FText::FromString(TEXT("Validation Failed: ScenarioVersion must be greater than zero."));
 		return false;
@@ -124,10 +169,11 @@ UShadowSlaveNightmareScenarioDefinition* UShadowSlaveNightmareScenarioDefinition
 	UObject* EffectiveOuter = Outer ? Outer : GetTransientPackage();
 	UShadowSlaveNightmareScenarioDefinition* TestDef = NewObject<UShadowSlaveNightmareScenarioDefinition>(EffectiveOuter);
 
-	TestDef->ScenarioId = FName(TEXT("Scenario_Dev_Test"));
+	TestDef->ContentId = FName(TEXT("Scenario_Dev_Test"));
+	TestDef->ContentType = EShadowSlaveContentType::Custom;
 	TestDef->DisplayName = FText::FromString(TEXT("Development Test Scenario"));
 	TestDef->Description = FText::FromString(TEXT("Generic test scenario used for headless validation of session and objective state machines."));
-	TestDef->ScenarioVersion = 1;
+	TestDef->Version = 1;
 	TestDef->CompletionRule = EShadowSlaveScenarioCompletionRule::AllRequiredObjectives;
 
 	// Objective 1: Generic navigation objective

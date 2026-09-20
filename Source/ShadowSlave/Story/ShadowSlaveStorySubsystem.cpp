@@ -462,22 +462,22 @@ void UShadowSlaveStorySubsystem::HandleConversationAborted(FName DialogueId, FNa
 
 void UShadowSlaveStorySubsystem::HandleNightmareScenarioCompleted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
 {
-	if (bIsRestoringState || !ScenarioDef || ScenarioDef->ScenarioId.IsNone())
+	if (bIsRestoringState || !ScenarioDef || ScenarioDef->GetScenarioId().IsNone())
 	{
 		return;
 	}
 
-	NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->ScenarioId);
+	NotifyStoryContentTargetCompleted(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->GetScenarioId());
 }
 
 void UShadowSlaveStorySubsystem::HandleNightmareScenarioFailed(UShadowSlaveNightmareScenarioDefinition* ScenarioDef, EShadowSlaveScenarioFailureReason Reason)
 {
-	if (bIsRestoringState || !ScenarioDef || ScenarioDef->ScenarioId.IsNone())
+	if (bIsRestoringState || !ScenarioDef || ScenarioDef->GetScenarioId().IsNone())
 	{
 		return;
 	}
 
-	NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->ScenarioId);
+	NotifyStoryContentTargetFailed(EShadowSlaveStoryContentType::Nightmare, ScenarioDef->GetScenarioId());
 }
 
 void UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
@@ -488,7 +488,7 @@ void UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted(UShadowSlaveNigh
 	}
 
 	UE_LOG(LogShadowSlave, Verbose, TEXT("UShadowSlaveStorySubsystem::HandleNightmareScenarioAborted - Scenario '%s' aborted. Leaving entry active."),
-		*ScenarioDef->ScenarioId.ToString());
+		*ScenarioDef->GetScenarioId().ToString());
 }
 
 void UShadowSlaveStorySubsystem::HandleWorldStateChanged(

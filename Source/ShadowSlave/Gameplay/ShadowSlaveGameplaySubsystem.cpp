@@ -505,13 +505,13 @@ bool UShadowSlaveGameplaySubsystem::BeginNightmareScenario(UShadowSlaveNightmare
 		if (!RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Nightmare))
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveGameplaySubsystem::BeginNightmareScenario - Flow transition to Nightmare rejected after scenario started; aborting scenario '%s'."),
-				*ScenarioDef->ScenarioId.ToString());
+				*ScenarioDef->GetScenarioId().ToString());
 			NightmareSub->AbortScenario();
 			return false;
 		}
 	}
 
-	ActiveNightmareScenarioId = ScenarioDef->ScenarioId;
+	ActiveNightmareScenarioId = ScenarioDef->GetScenarioId();
 	return true;
 }
 
@@ -863,18 +863,18 @@ void UShadowSlaveGameplaySubsystem::HandleNightmareScenarioStarted(UShadowSlaveN
 	{
 		if (RequestFlowStateTransition(EShadowSlaveGameplayFlowState::Nightmare))
 		{
-			ActiveNightmareScenarioId = ScenarioDef->ScenarioId;
+			ActiveNightmareScenarioId = ScenarioDef->GetScenarioId();
 		}
 	}
 	else
 	{
-		ActiveNightmareScenarioId = ScenarioDef->ScenarioId;
+		ActiveNightmareScenarioId = ScenarioDef->GetScenarioId();
 	}
 }
 
 void UShadowSlaveGameplaySubsystem::HandleNightmareScenarioEnded(UShadowSlaveNightmareScenarioDefinition* ScenarioDef)
 {
-	const FName EndedScenarioId = ScenarioDef ? ScenarioDef->ScenarioId : NAME_None;
+	const FName EndedScenarioId = ScenarioDef ? ScenarioDef->GetScenarioId() : NAME_None;
 
 	if (EndedScenarioId.IsNone() || ActiveNightmareScenarioId == EndedScenarioId)
 	{

@@ -38,7 +38,7 @@ void UShadowSlaveNightmareObjectiveTracker::InitializeObjectives(const UShadowSl
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareObjectiveTracker: Initialized %d objectives for scenario '%s'."),
 		ObjectiveRuntimeStates.Num(),
-		*InScenarioDef->ScenarioId.ToString()
+		*InScenarioDef->GetScenarioId().ToString()
 	);
 }
 
@@ -78,7 +78,7 @@ bool UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates(const 
 		{
 			UE_LOG(LogShadowSlave, Warning, TEXT("UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates: Saved objective '%s' not present in scenario definition '%s'. Skipping unknown objective."),
 				*SavedObj.ObjectiveId.ToString(),
-				*BoundScenarioDefinition->ScenarioId.ToString()
+				*BoundScenarioDefinition->GetScenarioId().ToString()
 			);
 			continue;
 		}
@@ -93,7 +93,7 @@ bool UShadowSlaveNightmareObjectiveTracker::RestoreObjectiveRuntimeStates(const 
 
 	UE_LOG(LogShadowSlave, Log, TEXT("UShadowSlaveNightmareObjectiveTracker: Restored %d objective runtime states for scenario '%s'."),
 		SeenSavedIds.Num(),
-		*BoundScenarioDefinition->ScenarioId.ToString()
+		*BoundScenarioDefinition->GetScenarioId().ToString()
 	);
 
 	return true;
