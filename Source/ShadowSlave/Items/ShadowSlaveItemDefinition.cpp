@@ -38,9 +38,13 @@ bool FShadowSlaveItemInstance::CanStackWith(const FShadowSlaveItemInstance& Othe
 }
 
 UShadowSlaveItemDefinition::UShadowSlaveItemDefinition()
+	: UShadowSlaveContentDefinition()
 {
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Item;
 	DisplayName = FText::FromString(TEXT("Generic Item"));
 	Description = FText::FromString(TEXT("A generic item prototype."));
+	Version = 1;
 	ItemType = EShadowSlaveItemType::Miscellaneous;
 	EquipmentSlot = EShadowSlaveEquipmentSlot::None;
 	bIsStackable = false;
@@ -51,7 +55,73 @@ UShadowSlaveItemDefinition::UShadowSlaveItemDefinition()
 
 FPrimaryAssetId UShadowSlaveItemDefinition::GetPrimaryAssetId() const
 {
-	return FPrimaryAssetId(TEXT("Item"), GetFName());
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveItemDefinition::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content validation: DisplayName must not be empty
+	if (DisplayName.IsEmpty())
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Item definition '%s' must have a non-empty DisplayName."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Generic content type validation: must be Item
+	if (ContentType != EShadowSlaveContentType::Item)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Item definition '%s' must have ContentType == EShadowSlaveContentType::Item."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 4. Item-specific validation: stack size must be at least 1 if stackable
+	if (bIsStackable && MaxStackSize < 1)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Item definition '%s' is stackable but has MaxStackSize < 1 (%d)."),
+				*ContentId.ToString(), MaxStackSize);
+		}
+		return false;
+	}
+
+	// 5. Item-specific validation: weight cannot be negative
+	if (Weight < 0.0f)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Item definition '%s' has negative Weight (%.2f)."),
+				*ContentId.ToString(), Weight);
+		}
+		return false;
+	}
+
+	// 6. Item-specific validation: base value cannot be negative
+	if (BaseValue < 0)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Item definition '%s' has negative BaseValue (%d)."),
+				*ContentId.ToString(), BaseValue);
+		}
+		return false;
+	}
+
+	return true;
 }
 
 UShadowSlaveItemDefinition* UShadowSlaveItemDefinition::CreateTestConsumableDefinition(UObject* Outer)
@@ -60,8 +130,11 @@ UShadowSlaveItemDefinition* UShadowSlaveItemDefinition::CreateTestConsumableDefi
 	UShadowSlaveItemDefinition* TestDef = NewObject<UShadowSlaveItemDefinition>(EffectiveOuter, FName(TEXT("TestConsumableItem")));
 	if (TestDef)
 	{
+		TestDef->ContentId = FName(TEXT("TestConsumableItem"));
+		TestDef->ContentType = EShadowSlaveContentType::Item;
 		TestDef->DisplayName = FText::FromString(TEXT("Generic Test Draught"));
 		TestDef->Description = FText::FromString(TEXT("A temporary development consumable for verifying stackable inventory operations."));
+		TestDef->Version = 1;
 		TestDef->ItemType = EShadowSlaveItemType::Consumable;
 		TestDef->EquipmentSlot = EShadowSlaveEquipmentSlot::None;
 		TestDef->bIsStackable = true;
@@ -78,8 +151,11 @@ UShadowSlaveItemDefinition* UShadowSlaveItemDefinition::CreateTestQuestItemDefin
 	UShadowSlaveItemDefinition* TestDef = NewObject<UShadowSlaveItemDefinition>(EffectiveOuter, FName(TEXT("TestQuestItem")));
 	if (TestDef)
 	{
+		TestDef->ContentId = FName(TEXT("TestQuestItem"));
+		TestDef->ContentType = EShadowSlaveContentType::Item;
 		TestDef->DisplayName = FText::FromString(TEXT("Generic Test Relic Key"));
 		TestDef->Description = FText::FromString(TEXT("A temporary development quest item for verifying unique, non-stackable inventory slots."));
+		TestDef->Version = 1;
 		TestDef->ItemType = EShadowSlaveItemType::Quest;
 		TestDef->EquipmentSlot = EShadowSlaveEquipmentSlot::None;
 		TestDef->bIsStackable = false;

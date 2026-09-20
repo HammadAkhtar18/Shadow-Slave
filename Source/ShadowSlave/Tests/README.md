@@ -6,7 +6,7 @@ This directory contains the initial Unreal Engine 5 Automation Testing suite for
 ```
 Source/ShadowSlave/Tests/
 ├── ShadowSlaveCombatTests.cpp        # Combat state machine, transitions, death terminality, attack/dodge validation
-├── ShadowSlaveInventoryTests.cpp     # Inventory capacity, stacking, atomic removal, GUID lookup, clearing
+├── ShadowSlaveInventoryTests.cpp     # Inventory capacity, stacking, atomic removal, GUID lookup, clearing, and Item definition content pipeline integration
 ├── ShadowSlaveQuestTests.cpp         # Quest registration, duplicate rejection, prerequisites, objective progress invariants
 ├── ShadowSlaveStoryTests.cpp         # Story content save restore, parent/child reconciliation, prerequisite validation, and content pipeline integration
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
@@ -24,6 +24,7 @@ Source/ShadowSlave/Tests/
 All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Combat.*`
 - `ShadowSlave.Inventory.*`
+- `ShadowSlave.ItemDefinition.*`
 - `ShadowSlave.Quest.*`
 - `ShadowSlave.Story.*`
 - `ShadowSlave.StoryContent.*`

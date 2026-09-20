@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Items/ShadowSlaveItemTypes.h"
 #include "Attributes/ShadowSlaveAttributeTypes.h"
 #include "ShadowSlaveItemDefinition.generated.h"
@@ -12,11 +12,27 @@ class UTexture2D;
 class UStaticMesh;
 
 /**
- * Data-driven primary data asset describing immutable item definitions.
- * Integrated with Unreal Engine's PrimaryAssetId system for data-driven discovery.
+ * Data-driven content definition describing immutable item definitions.
+ * Specialization of UShadowSlaveContentDefinition for the generic content pipeline.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. SPECIALIZED CONTENT DEFINITION: ItemDefinition is a specialized static content definition
+ *    deriving from UShadowSlaveContentDefinition.
+ * 2. GENERIC CONTENT CLASSIFICATION: Generic ContentType identifies this asset as
+ *    EShadowSlaveContentType::Item across the content pipeline and registry.
+ * 3. TAXONOMY SEPARATION: Any Item-specific taxonomy (EShadowSlaveItemType, EShadowSlaveEquipmentSlot)
+ *    remains completely separate from the generic content pipeline type.
+ * 4. SINGLE AUTHORITATIVE ID: ContentId is the sole stored identifier. GetItemId() and SetItemId()
+ *    provide backward-compatible accessors without duplicate storage or reference-member aliases.
+ * 5. RUNTIME STATE SEPARATION: UShadowSlaveInventoryComponent remains authoritative for runtime item
+ *    ownership and state (quantities, slot layout, instance GUIDs).
+ * 6. EQUIPMENT AUTHORITY: UShadowSlaveEquipmentComponent remains authoritative for equipped item
+ *    state and granted modifier application.
+ * 7. CONTENT REGISTRY ROLE: UShadowSlaveContentRegistrySubsystem is a static asset lookup and discovery
+ *    service; it does NOT replace or manage runtime inventory/equipment state.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveItemDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveItemDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -25,17 +41,26 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
+	/**
+	 * Validates definition configuration.
+	 * Combines base generic content validation (valid ContentId, valid DisplayName, Version >= 1, ContentType == Item)
+	 * with Item-specific rules (stacking rules, non-negative weight and value).
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
+
+	/* --- Identification Compatibility Accessors --- */
+
+	/** Compatibility accessor returning the authoritative ContentId as ItemId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Item|Identity")
+	FName GetItemId() const { return ContentId; }
+
+	/** Compatibility accessor setting the authoritative ContentId as ItemId */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Item|Identity")
+	void SetItemId(FName InItemId) { ContentId = InItemId; }
+
 	/* --- Identification & Categorization --- */
 
-	/** Display name shown to players in UI/logs */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Item|Identity")
-	FText DisplayName;
-
-	/** Lore or description text */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Item|Identity", meta = (MultiLine = true))
-	FText Description;
-
-	/** Broad classification of item */
+	/** Broad classification of item (independent of generic EShadowSlaveContentType) */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Item|Identity")
 	EShadowSlaveItemType ItemType = EShadowSlaveItemType::Miscellaneous;
 
