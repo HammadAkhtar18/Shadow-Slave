@@ -809,7 +809,7 @@ void UShadowSlaveSaveSubsystem::CaptureStatusEffects(UShadowSlaveStatusEffectCom
 
 		FShadowSlaveStatusEffectSaveData EffectSave;
 		EffectSave.InstanceId = Effect.InstanceId;
-		EffectSave.EffectId = Effect.EffectDefinition->EffectId;
+		EffectSave.EffectId = Effect.EffectDefinition->GetEffectId();
 		EffectSave.EffectPrimaryAssetId = Effect.EffectDefinition->GetPrimaryAssetId();
 		EffectSave.CurrentStacks = Effect.CurrentStacks;
 		EffectSave.DynamicProperties = Effect.DynamicProperties;

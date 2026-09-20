@@ -45,7 +45,7 @@ FPrimaryAssetId UShadowSlaveContentDefinition::GetPrimaryAssetId() const
 		TypeName = TEXT("ContentWorld");
 		break;
 	case EShadowSlaveContentType::Custom:
-		TypeName = TEXT("ContentCustom");
+		TypeName = GetCustomPrimaryAssetType();
 		break;
 	case EShadowSlaveContentType::None:
 	default:

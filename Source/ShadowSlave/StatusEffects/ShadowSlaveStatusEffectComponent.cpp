@@ -259,7 +259,7 @@ bool UShadowSlaveStatusEffectComponent::HasEffectById(FName EffectId) const
 
 	return ActiveEffects.ContainsByPredicate([EffectId](const FShadowSlaveStatusEffectInstance& Inst)
 	{
-		return Inst.EffectDefinition && Inst.EffectDefinition->EffectId == EffectId;
+		return Inst.EffectDefinition && Inst.EffectDefinition->GetEffectId() == EffectId;
 	});
 }
 
@@ -325,7 +325,7 @@ bool UShadowSlaveStatusEffectComponent::FindEffectById(FName EffectId, FShadowSl
 
 	const FShadowSlaveStatusEffectInstance* Found = ActiveEffects.FindByPredicate([EffectId](const FShadowSlaveStatusEffectInstance& Inst)
 	{
-		return Inst.EffectDefinition && Inst.EffectDefinition->EffectId == EffectId;
+		return Inst.EffectDefinition && Inst.EffectDefinition->GetEffectId() == EffectId;
 	});
 
 	if (Found)

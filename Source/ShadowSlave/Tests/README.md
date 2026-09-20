@@ -12,7 +12,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveDialogueTests.cpp      # Conversation consequences, rank conditions, and passive dialogue save/restore guards
 ├── ShadowSlaveAspectTests.cpp        # Generic Aspect ability activation, resource validation, and transient state behavior
 ├── ShadowSlaveEchoTests.cpp          # Generic Echo acquisition, summoning/dismissal lifecycle, transient actor representation, duplicate summon rejection, destruction, save/load, reentrancy rejection, teardown safety, and content pipeline integration
-├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, and expired-effect-not-restored verification
+├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, expired-effect-not-restored verification, and content pipeline integration
 ├── ShadowSlaveGameplayTagTests.cpp   # Native Gameplay Tag container queries, mutation, hierarchical matching, and decoupled architecture
 ├── ShadowSlaveContentRegistryTests.cpp # Generic content data asset registration, soft reference resolution, duplicate rejection, and decoupled architecture
 ├── ShadowSlaveMemoryTests.cpp        # Memory definition content pipeline integration, inheritance, single authoritative ID, validation, and runtime compatibility
@@ -31,6 +31,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.Echoes.*`
 - `ShadowSlave.Echo.*`
 - `ShadowSlave.StatusEffects.*`
+- `ShadowSlave.StatusEffect.*`
 - `ShadowSlave.GameplayTags.*`
 - `ShadowSlave.ContentRegistry.*`
 - `ShadowSlave.Memory.*`

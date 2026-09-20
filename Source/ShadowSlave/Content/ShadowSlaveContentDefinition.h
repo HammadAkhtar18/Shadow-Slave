@@ -75,4 +75,11 @@ public:
 	/** Authoring provenance, novel chapter reference, or source note for tracking canon fidelity */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Content|Provenance")
 	FString ProvenanceNote;
+
+protected:
+	/**
+	 * Hook for derived classes with ContentType == Custom to supply a specialized PrimaryAssetType name.
+	 * Keeps PrimaryAssetId construction and ContentId fallbacks centralized in this generic base.
+	 */
+	virtual FName GetCustomPrimaryAssetType() const { return TEXT("ContentCustom"); }
 };

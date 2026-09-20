@@ -10,6 +10,9 @@
 #include "Characters/ShadowSlaveCharacterBase.h"
 #include "Characters/ShadowSlavePlayerCharacter.h"
 #include "Attributes/ShadowSlaveAttributeComponent.h"
+#include "Content/ShadowSlaveContentTypes.h"
+#include "Content/ShadowSlaveContentDefinition.h"
+#include "Content/ShadowSlaveContentRegistrySubsystem.h"
 #include "Save/ShadowSlaveSaveSubsystem.h"
 #include "Save/ShadowSlaveSaveTypes.h"
 
@@ -45,7 +48,7 @@ namespace
 				return false;
 			}
 
-			EffectDef->EffectId = InEffectId;
+			EffectDef->SetEffectId(InEffectId);
 			EffectDef->DisplayName = FText::FromString(TEXT("Test Status"));
 			EffectDef->Description = FText::FromString(TEXT("A test status effect for automation."));
 			EffectDef->DurationPolicy = DurationPolicy;
@@ -79,7 +82,7 @@ bool FShadowSlaveStatusEffectApplicationAndQueriesTest::RunTest(const FString& P
 	// Initial state verification
 	TestEqual(TEXT("Initial effect count must be 0"), Fixture.StatusComp->GetEffectCount(), 0);
 	TestFalse(TEXT("HasEffect must return false before application"), Fixture.StatusComp->HasEffect(Fixture.EffectDef));
-	TestFalse(TEXT("HasEffectById must return false before application"), Fixture.StatusComp->HasEffectById(Fixture.EffectDef->EffectId));
+	TestFalse(TEXT("HasEffectById must return false before application"), Fixture.StatusComp->HasEffectById(Fixture.EffectDef->GetEffectId()));
 
 	// Application with source attribution and dynamic properties
 	const FGuid SourceGuid = FGuid::NewGuid();
@@ -93,7 +96,7 @@ bool FShadowSlaveStatusEffectApplicationAndQueriesTest::RunTest(const FString& P
 
 	// Query verification
 	TestTrue(TEXT("HasEffect must return true"), Fixture.StatusComp->HasEffect(Fixture.EffectDef));
-	TestTrue(TEXT("HasEffectById must return true"), Fixture.StatusComp->HasEffectById(Fixture.EffectDef->EffectId));
+	TestTrue(TEXT("HasEffectById must return true"), Fixture.StatusComp->HasEffectById(Fixture.EffectDef->GetEffectId()));
 	TestTrue(TEXT("HasEffectByInstanceId must return true"), Fixture.StatusComp->HasEffectByInstanceId(AppliedId));
 
 	FShadowSlaveStatusEffectInstance FoundInstance;
@@ -271,7 +274,7 @@ bool FShadowSlaveStatusEffectRemovalAndCleanupTest::RunTest(const FString& Param
 	TestTrue(TEXT("Fixture must initialize"), Fixture.Initialize(FName(TEXT("Test_DefA"))));
 
 	UShadowSlaveStatusEffectDefinition* DefB = NewObject<UShadowSlaveStatusEffectDefinition>(Fixture.Player);
-	DefB->EffectId = FName(TEXT("Test_DefB"));
+	DefB->SetEffectId(FName(TEXT("Test_DefB")));
 	DefB->DurationPolicy = EStatusEffectDurationPolicy::Persistent;
 
 	const FGuid IdA = Fixture.StatusComp->ApplyEffectSimple(Fixture.EffectDef);
@@ -320,13 +323,13 @@ bool FShadowSlaveStatusEffectValidationAndRejectionTest::RunTest(const FString& 
 	TestEqual(TEXT("Count must remain 0"), Fixture.StatusComp->GetEffectCount(), 0);
 
 	// 2. Empty EffectId rejected
-	Fixture.EffectDef->EffectId = NAME_None;
+	Fixture.EffectDef->SetEffectId(NAME_None);
 	TestFalse(TEXT("Effect with NAME_None ID must fail IsValidDefinition"), Fixture.EffectDef->IsValidDefinition());
 	const FGuid EmptyIdResult = Fixture.StatusComp->ApplyEffectSimple(Fixture.EffectDef);
 	TestFalse(TEXT("Empty EffectId must be rejected"), EmptyIdResult.IsValid());
 
 	// 3. Timed effect with non-positive duration rejected
-	Fixture.EffectDef->EffectId = FName(TEXT("Test_InvalidDuration"));
+	Fixture.EffectDef->SetEffectId(FName(TEXT("Test_InvalidDuration")));
 	Fixture.EffectDef->DurationPolicy = EStatusEffectDurationPolicy::Timed;
 	Fixture.EffectDef->Duration = 0.0f;
 	TestFalse(TEXT("Zero duration must fail IsValidDefinition"), Fixture.EffectDef->IsValidDefinition());
@@ -367,7 +370,7 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 
 	// Create non-persistent definition
 	UShadowSlaveStatusEffectDefinition* TransientDef = NewObject<UShadowSlaveStatusEffectDefinition>(Fixture.Player);
-	TransientDef->EffectId = FName(TEXT("Test_TransientStatus"));
+	TransientDef->SetEffectId(FName(TEXT("Test_TransientStatus")));
 	TransientDef->DurationPolicy = EStatusEffectDurationPolicy::Timed;
 	TransientDef->Duration = 5.0f;
 	TransientDef->bPersistAcrossSaveLoad = false;
@@ -395,7 +398,7 @@ bool FShadowSlaveStatusEffectSaveLoadBoundaryTest::RunTest(const FString& Parame
 	if (SaveData.Effects.Num() == 1)
 	{
 		const FShadowSlaveStatusEffectSaveData& Saved = SaveData.Effects[0];
-		TestEqual(TEXT("Saved EffectId must match persistent effect"), Saved.EffectId, Fixture.EffectDef->EffectId);
+		TestEqual(TEXT("Saved EffectId must match persistent effect"), Saved.EffectId, Fixture.EffectDef->GetEffectId());
 		TestEqual(TEXT("Saved InstanceId must match original GUID"), Saved.InstanceId, PersistId);
 		TestEqual(TEXT("Saved stacks must match"), Saved.CurrentStacks, 1);
 
@@ -553,7 +556,7 @@ bool FShadowSlaveStatusEffectReentrancyApplyDuringRemoveTest::RunTest(const FStr
 
 	// Create a second definition to attempt applying during remove
 	UShadowSlaveStatusEffectDefinition* SecondDef = NewObject<UShadowSlaveStatusEffectDefinition>(Fixture.Player);
-	SecondDef->EffectId = FName(TEXT("Test_ReentrancyB_Second"));
+	SecondDef->SetEffectId(FName(TEXT("Test_ReentrancyB_Second")));
 	SecondDef->DurationPolicy = EStatusEffectDurationPolicy::Persistent;
 
 	// Apply and then set up a delegate that attempts to apply another effect during removal
@@ -695,7 +698,7 @@ bool FShadowSlaveStatusEffectExpiredNotRestoredTest::RunTest(const FString& Para
 
 	FShadowSlaveStatusEffectSaveData ExpiredEffect;
 	ExpiredEffect.InstanceId = FGuid::NewGuid();
-	ExpiredEffect.EffectId = Fixture.EffectDef->EffectId;
+	ExpiredEffect.EffectId = Fixture.EffectDef->GetEffectId();
 	ExpiredEffect.EffectPrimaryAssetId = Fixture.EffectDef->GetPrimaryAssetId();
 	ExpiredEffect.CurrentStacks = 1;
 	ExpiredEffect.RemainingDuration = 0.0f; // Expired!
@@ -704,7 +707,7 @@ bool FShadowSlaveStatusEffectExpiredNotRestoredTest::RunTest(const FString& Para
 	// Also add one with negative remaining duration
 	FShadowSlaveStatusEffectSaveData NegativeEffect;
 	NegativeEffect.InstanceId = FGuid::NewGuid();
-	NegativeEffect.EffectId = Fixture.EffectDef->EffectId;
+	NegativeEffect.EffectId = Fixture.EffectDef->GetEffectId();
 	NegativeEffect.EffectPrimaryAssetId = Fixture.EffectDef->GetPrimaryAssetId();
 	NegativeEffect.CurrentStacks = 1;
 	NegativeEffect.RemainingDuration = -5.0f; // Invalid for timed
@@ -716,6 +719,267 @@ bool FShadowSlaveStatusEffectExpiredNotRestoredTest::RunTest(const FString& Para
 	SaveSubsystem->RestoreStatusEffects(RestoredComp, SaveData);
 
 	TestEqual(TEXT("Restored component must have 0 effects (expired effects skipped)"), RestoredComp->GetEffectCount(), 0);
+
+	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Step 40 — Status Effect Definition Content Pipeline Integration Tests
+// ------------------------------------------------------------------------------------------------
+
+// 12. DefinitionUsesGenericContentBase Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectDefinitionUsesGenericContentBaseTest,
+	"ShadowSlave.StatusEffect.DefinitionUsesGenericContentBase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectDefinitionUsesGenericContentBaseTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStatusEffectDefinition* EffectDef = NewObject<UShadowSlaveStatusEffectDefinition>();
+	TestNotNull(TEXT("EffectDef must be instantiable"), EffectDef);
+
+	// C++ type hierarchy verification
+	UShadowSlaveContentDefinition* ContentDef = Cast<UShadowSlaveContentDefinition>(EffectDef);
+	TestNotNull(TEXT("StatusEffect definition must cast to UShadowSlaveContentDefinition"), ContentDef);
+
+	UPrimaryDataAsset* PrimaryDataAsset = Cast<UPrimaryDataAsset>(EffectDef);
+	TestNotNull(TEXT("StatusEffect definition must cast to UPrimaryDataAsset"), PrimaryDataAsset);
+
+	// Unreal reflection hierarchy verification
+	TestTrue(TEXT("StaticClass must be child of UShadowSlaveContentDefinition"),
+		UShadowSlaveStatusEffectDefinition::StaticClass()->IsChildOf(UShadowSlaveContentDefinition::StaticClass()));
+	TestTrue(TEXT("StaticClass must be child of UPrimaryDataAsset"),
+		UShadowSlaveStatusEffectDefinition::StaticClass()->IsChildOf(UPrimaryDataAsset::StaticClass()));
+
+	return true;
+}
+
+// 13. DefinitionUsesContentType Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectDefinitionUsesContentTypeTest,
+	"ShadowSlave.StatusEffect.DefinitionUsesContentType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectDefinitionUsesContentTypeTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStatusEffectDefinition* EffectDef = NewObject<UShadowSlaveStatusEffectDefinition>();
+	TestNotNull(TEXT("EffectDef must be instantiable"), EffectDef);
+
+	// Status Effect definitions must report Custom as their generic content category
+	TestEqual(TEXT("Default ContentType must be Custom"), EffectDef->ContentType, EShadowSlaveContentType::Custom);
+
+	// Must NOT report other content categories
+	TestFalse(TEXT("Must not be None"), EffectDef->ContentType == EShadowSlaveContentType::None);
+	TestFalse(TEXT("Must not be Memory"), EffectDef->ContentType == EShadowSlaveContentType::Memory);
+	TestFalse(TEXT("Must not be Echo"), EffectDef->ContentType == EShadowSlaveContentType::Echo);
+	TestFalse(TEXT("Must not be Item"), EffectDef->ContentType == EShadowSlaveContentType::Item);
+	TestFalse(TEXT("Must not be Quest"), EffectDef->ContentType == EShadowSlaveContentType::Quest);
+
+	return true;
+}
+
+// 14. DefinitionHasSingleAuthoritativeId Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectDefinitionHasSingleAuthoritativeIdTest,
+	"ShadowSlave.StatusEffect.DefinitionHasSingleAuthoritativeId",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectDefinitionHasSingleAuthoritativeIdTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveStatusEffectDefinition* EffectDef = NewObject<UShadowSlaveStatusEffectDefinition>();
+	TestNotNull(TEXT("EffectDef must be instantiable"), EffectDef);
+
+	// Verify ContentId is the sole stored identifier property
+	FProperty* ContentIdProp = UShadowSlaveStatusEffectDefinition::StaticClass()->FindPropertyByName(TEXT("ContentId"));
+	TestNotNull(TEXT("ContentId property must exist in reflection"), ContentIdProp);
+
+	// Verify NO second stored EffectId property exists
+	FProperty* EffectIdProp = UShadowSlaveStatusEffectDefinition::StaticClass()->FindPropertyByName(TEXT("EffectId"));
+	TestNull(TEXT("EffectId property must NOT exist in reflection (no duplicate stored identifier)"), EffectIdProp);
+
+	// Verify compatibility accessors read and write ContentId
+	const FName TestId(TEXT("Test_Authoritative_Effect"));
+	EffectDef->SetEffectId(TestId);
+	TestEqual(TEXT("GetEffectId() must return the value set via SetEffectId()"), EffectDef->GetEffectId(), TestId);
+	TestEqual(TEXT("ContentId must match the value set via SetEffectId()"), EffectDef->ContentId, TestId);
+
+	const FName DirectId(TEXT("Test_Direct_ContentId"));
+	EffectDef->ContentId = DirectId;
+	TestEqual(TEXT("GetEffectId() must return value written directly to ContentId"), EffectDef->GetEffectId(), DirectId);
+
+	return true;
+}
+
+// 15. DefinitionValidation Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectDefinitionValidationTest,
+	"ShadowSlave.StatusEffect.DefinitionValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectDefinitionValidationTest::RunTest(const FString& Parameters)
+{
+	// 1. Valid definition passes validation
+	UShadowSlaveStatusEffectDefinition* ValidDef = NewObject<UShadowSlaveStatusEffectDefinition>();
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Status"));
+	ValidDef->DurationPolicy = EStatusEffectDurationPolicy::Timed;
+	ValidDef->Duration = 5.0f;
+	ValidDef->MaxStacks = 1;
+
+	FString ErrorMsg;
+	TestTrue(TEXT("Valid status effect passes IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestTrue(TEXT("Valid status effect passes ValidateDefinition"), ValidDef->ValidateDefinition(ErrorMsg));
+
+	// 2. NAME_None ContentId fails validation
+	ValidDef->ContentId = NAME_None;
+	TestFalse(TEXT("NAME_None ContentId must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	TestFalse(TEXT("Error message must be populated for None ContentId"), ErrorMsg.IsEmpty());
+
+	// 3. Version < 1 fails validation
+	ValidDef->ContentId = FName(TEXT("Test_Valid_Status"));
+	ValidDef->Version = 0;
+	TestFalse(TEXT("Version 0 must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// 4. Incorrect ContentType fails validation
+	ValidDef->Version = 1;
+	ValidDef->ContentType = EShadowSlaveContentType::Memory;
+	TestFalse(TEXT("ContentType != Custom must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// 5. Timed with non-positive duration fails validation
+	ValidDef->ContentType = EShadowSlaveContentType::Custom;
+	ValidDef->Duration = 0.0f;
+	TestFalse(TEXT("Zero duration must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->Duration = -3.0f;
+	TestFalse(TEXT("Negative duration must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// 6. MaxStacks < 1 fails validation
+	ValidDef->Duration = 5.0f;
+	ValidDef->MaxStacks = 0;
+	TestFalse(TEXT("Zero MaxStacks must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+	ValidDef->MaxStacks = -1;
+	TestFalse(TEXT("Negative MaxStacks must fail IsValidDefinition"), ValidDef->IsValidDefinition(&ErrorMsg));
+
+	// Restored definition passes again
+	ValidDef->MaxStacks = 1;
+	TestTrue(TEXT("Restored definition passes validation"), ValidDef->IsValidDefinition());
+
+	return true;
+}
+
+// 16. DefinitionRegistryIntegration Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectDefinitionRegistryIntegrationTest,
+	"ShadowSlave.StatusEffect.DefinitionRegistryIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectDefinitionRegistryIntegrationTest::RunTest(const FString& Parameters)
+{
+	UShadowSlaveContentRegistrySubsystem* Registry = NewObject<UShadowSlaveContentRegistrySubsystem>();
+	TestNotNull(TEXT("Registry subsystem must be created"), Registry);
+
+	UShadowSlaveStatusEffectDefinition* EffectDef = NewObject<UShadowSlaveStatusEffectDefinition>();
+	EffectDef->ContentId = FName(TEXT("Status_Test_Haste"));
+	EffectDef->DisplayName = FText::FromString(TEXT("Test Haste Effect"));
+	EffectDef->DurationPolicy = EStatusEffectDurationPolicy::Timed;
+	EffectDef->Duration = 10.0f;
+	EffectDef->StackingPolicy = EStatusEffectStackingPolicy::AddStacks;
+	EffectDef->MaxStacks = 3;
+	EffectDef->Polarity = EStatusEffectPolarity::Beneficial;
+
+	// Register with generic registry subsystem
+	const bool bRegistered = Registry->RegisterDefinition(EffectDef);
+	TestTrue(TEXT("RegisterDefinition must succeed for UShadowSlaveStatusEffectDefinition"), bRegistered);
+
+	// Query existence
+	TestTrue(TEXT("HasContent must return true for registered StatusEffect"), Registry->HasContent(EffectDef->ContentId));
+	TestEqual(TEXT("Total registered count must be 1"), Registry->GetRegisteredContentCount(), 1);
+	TestEqual(TEXT("Custom count by type must be 1"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Custom), 1);
+	TestEqual(TEXT("Memory count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Memory), 0);
+	TestEqual(TEXT("Echo count by type must be 0"), Registry->GetRegisteredContentCountByType(EShadowSlaveContentType::Echo), 0);
+
+	// Generic resolution
+	UShadowSlaveContentDefinition* ResolvedGeneric = Registry->ResolveContentDefinition(EffectDef->ContentId);
+	TestNotNull(TEXT("Resolved generic definition must not be null"), ResolvedGeneric);
+	TestEqual(TEXT("Resolved generic definition must match EffectDef"), ResolvedGeneric, Cast<UShadowSlaveContentDefinition>(EffectDef));
+
+	// Typed resolution
+	UShadowSlaveStatusEffectDefinition* ResolvedEffect = Registry->ResolveContentDefinition<UShadowSlaveStatusEffectDefinition>(EffectDef->ContentId);
+	TestNotNull(TEXT("Resolved typed status effect definition must not be null"), ResolvedEffect);
+	TestEqual(TEXT("Resolved typed effect must match original EffectDef"), ResolvedEffect, EffectDef);
+	TestEqual(TEXT("Resolved DurationPolicy matches"), ResolvedEffect->DurationPolicy, EffectDef->DurationPolicy);
+	TestEqual(TEXT("Resolved Duration matches"), ResolvedEffect->Duration, EffectDef->Duration);
+	TestEqual(TEXT("Resolved StackingPolicy matches"), ResolvedEffect->StackingPolicy, EffectDef->StackingPolicy);
+	TestEqual(TEXT("Resolved MaxStacks matches"), ResolvedEffect->MaxStacks, EffectDef->MaxStacks);
+	TestEqual(TEXT("Resolved Polarity matches"), ResolvedEffect->Polarity, EffectDef->Polarity);
+
+	// PrimaryAssetId verification
+	const FPrimaryAssetId ExpectedAssetId(TEXT("StatusEffect"), EffectDef->ContentId);
+	TestEqual(TEXT("GetPrimaryAssetId must match expected PrimaryAssetId"), EffectDef->GetPrimaryAssetId(), ExpectedAssetId);
+
+	return true;
+}
+
+// 17. ExistingRuntimeCompatibility Test
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShadowSlaveStatusEffectExistingRuntimeCompatibilityTest,
+	"ShadowSlave.StatusEffect.ExistingRuntimeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FShadowSlaveStatusEffectExistingRuntimeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	AShadowSlavePlayerCharacter* Player = NewObject<AShadowSlavePlayerCharacter>();
+	TestNotNull(TEXT("Player must be instantiable"), Player);
+
+	UShadowSlaveStatusEffectComponent* StatusComp = Player->GetStatusEffectComponent();
+	TestNotNull(TEXT("StatusComp must exist on Player"), StatusComp);
+
+	UShadowSlaveStatusEffectDefinition* EffectDef = NewObject<UShadowSlaveStatusEffectDefinition>(Player);
+	EffectDef->ContentId = FName(TEXT("Compat_StatusEffect"));
+	EffectDef->DisplayName = FText::FromString(TEXT("Compatibility Test Status"));
+	EffectDef->DurationPolicy = EStatusEffectDurationPolicy::Timed;
+	EffectDef->Duration = 8.0f;
+	EffectDef->StackingPolicy = EStatusEffectStackingPolicy::AddStacks;
+	EffectDef->MaxStacks = 5;
+	EffectDef->Polarity = EStatusEffectPolarity::Beneficial;
+	EffectDef->bPersistAcrossSaveLoad = true;
+
+	// 1. Application
+	const FGuid AppliedId = StatusComp->ApplyEffectSimple(EffectDef);
+	TestTrue(TEXT("ApplyEffectSimple succeeds"), AppliedId.IsValid());
+	TestEqual(TEXT("Effect count is 1"), StatusComp->GetEffectCount(), 1);
+	TestTrue(TEXT("HasEffect succeeds"), StatusComp->HasEffect(EffectDef));
+	TestTrue(TEXT("HasEffectById succeeds with ContentId"), StatusComp->HasEffectById(EffectDef->ContentId));
+	TestTrue(TEXT("HasEffectById succeeds with GetEffectId()"), StatusComp->HasEffectById(EffectDef->GetEffectId()));
+	TestTrue(TEXT("HasEffectByInstanceId succeeds"), StatusComp->HasEffectByInstanceId(AppliedId));
+
+	// 2. Stacking
+	const FGuid StackedId = StatusComp->ApplyEffectSimple(EffectDef);
+	TestEqual(TEXT("Stacked ID matches original instance ID"), StackedId, AppliedId);
+	TestEqual(TEXT("Stack count is 2"), StatusComp->GetStackCount(EffectDef), 2);
+
+	// 3. Duration query
+	TestTrue(TEXT("Remaining duration is positive"), StatusComp->GetRemainingDuration(AppliedId) > 0.0f);
+	TestTrue(TEXT("Remaining duration <= total duration"), StatusComp->GetRemainingDuration(AppliedId) <= 8.0f);
+
+	// 4. Save/Load capture
+	UShadowSlaveSaveSubsystem* SaveSubsystem = NewObject<UShadowSlaveSaveSubsystem>();
+	TestNotNull(TEXT("SaveSubsystem must be created"), SaveSubsystem);
+	FShadowSlaveStatusEffectCollectionSaveData SaveData;
+	SaveSubsystem->CaptureStatusEffects(StatusComp, SaveData);
+	TestTrue(TEXT("CaptureStatusEffects succeeds"), SaveData.bIsValid);
+	TestEqual(TEXT("Saved effects count is 1"), SaveData.Effects.Num(), 1);
+	TestEqual(TEXT("Saved EffectId matches definition GetEffectId()"), SaveData.Effects[0].EffectId, EffectDef->GetEffectId());
+	TestEqual(TEXT("Saved CurrentStacks matches"), SaveData.Effects[0].CurrentStacks, 2);
+
+	// 5. Removal
+	TestTrue(TEXT("RemoveEffect succeeds"), StatusComp->RemoveEffect(AppliedId));
+	TestEqual(TEXT("Effect count is 0 after removal"), StatusComp->GetEffectCount(), 0);
+	TestFalse(TEXT("HasEffect is false after removal"), StatusComp->HasEffect(EffectDef));
 
 	return true;
 }
