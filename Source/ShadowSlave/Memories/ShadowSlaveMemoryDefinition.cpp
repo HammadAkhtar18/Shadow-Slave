@@ -60,10 +60,14 @@ bool FShadowSlaveMemoryInstance::RemoveDynamicProperty(FName Key)
 }
 
 UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
+	: UShadowSlaveContentDefinition()
+	, MemoryId(ContentId)
 {
-	MemoryId = NAME_None;
+	ContentId = NAME_None;
+	ContentType = EShadowSlaveContentType::Memory;
 	DisplayName = FText::FromString(TEXT("Generic Memory"));
 	Description = FText::FromString(TEXT("A generic Memory prototype definition."));
+	Version = 1;
 	Rank = EShadowSlaveMemoryRank::Unknown;
 	Tier = EShadowSlaveMemoryTier::Unknown;
 	Category = EShadowSlaveMemoryCategory::Miscellaneous;
@@ -77,7 +81,53 @@ UShadowSlaveMemoryDefinition::UShadowSlaveMemoryDefinition()
 
 FPrimaryAssetId UShadowSlaveMemoryDefinition::GetPrimaryAssetId() const
 {
-	return FPrimaryAssetId(TEXT("Memory"), GetFName());
+	return Super::GetPrimaryAssetId();
+}
+
+bool UShadowSlaveMemoryDefinition::IsValidDefinition(FString* OutErrorMessage) const
+{
+	// 1. Generic content definition validation (valid ContentId, Version >= 1)
+	if (!Super::IsValidDefinition(OutErrorMessage))
+	{
+		return false;
+	}
+
+	// 2. Generic content type validation: must be Memory
+	if (ContentType != EShadowSlaveContentType::Memory)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Memory definition '%s' must have ContentType == EShadowSlaveContentType::Memory."),
+				*ContentId.ToString());
+		}
+		return false;
+	}
+
+	// 3. Memory-specific validation: essence costs must not be negative
+	if (BaseEssenceCost < 0.0f)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Memory definition '%s' has negative BaseEssenceCost (%.2f)."),
+				*ContentId.ToString(), BaseEssenceCost);
+		}
+		return false;
+	}
+
+	for (const FShadowSlaveMemoryEnchantment& Enchantment : Enchantments)
+	{
+		if (Enchantment.EssenceCost < 0.0f)
+		{
+			if (OutErrorMessage)
+			{
+				*OutErrorMessage = FString::Printf(TEXT("Memory definition '%s' enchantment '%s' has negative EssenceCost (%.2f)."),
+					*ContentId.ToString(), *Enchantment.EnchantmentId.ToString(), Enchantment.EssenceCost);
+			}
+			return false;
+		}
+	}
+
+	return true;
 }
 
 UShadowSlaveMemoryDefinition* UShadowSlaveMemoryDefinition::CreateTestMemoryDefinition(UObject* Outer)

@@ -15,6 +15,7 @@ Source/ShadowSlave/Tests/
 ├── ShadowSlaveStatusEffectTests.cpp  # Generic status effect application, stacking, duration, cleanup, save/load (with remaining duration and source attribution), authority boundaries, reentrancy rejection, and expired-effect-not-restored verification
 ├── ShadowSlaveGameplayTagTests.cpp   # Native Gameplay Tag container queries, mutation, hierarchical matching, and decoupled architecture
 ├── ShadowSlaveContentRegistryTests.cpp # Generic content data asset registration, soft reference resolution, duplicate rejection, and decoupled architecture
+├── ShadowSlaveMemoryTests.cpp        # Memory definition content pipeline integration, inheritance, single authoritative ID, validation, and runtime compatibility
 ├── ShadowSlaveGameplayFlowTests.cpp  # High-level gameplay flow state transitions, idempotency, transactional requests, runtime progression bootstrap
 └── README.md                         # Documentation and discovery guide
 ```
@@ -31,6 +32,7 @@ All automation tests use structured, hierarchical namespaces:
 - `ShadowSlave.StatusEffects.*`
 - `ShadowSlave.GameplayTags.*`
 - `ShadowSlave.ContentRegistry.*`
+- `ShadowSlave.Memory.*`
 - `ShadowSlave.Gameplay.*`
 
 Test names are descriptive and describe specific invariant contracts (e.g. `ShadowSlave.Quest.MissingPrerequisitesFailClosed`, `ShadowSlave.Story.RestoreReconcilesActiveParentWithFailedEntry`).

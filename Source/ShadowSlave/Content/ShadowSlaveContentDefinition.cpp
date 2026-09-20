@@ -24,7 +24,7 @@ FPrimaryAssetId UShadowSlaveContentDefinition::GetPrimaryAssetId() const
 		TypeName = TEXT("ContentItem");
 		break;
 	case EShadowSlaveContentType::Memory:
-		TypeName = TEXT("ContentMemory");
+		TypeName = TEXT("Memory");
 		break;
 	case EShadowSlaveContentType::Echo:
 		TypeName = TEXT("ContentEcho");

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Content/ShadowSlaveContentDefinition.h"
 #include "Memories/ShadowSlaveMemoryTypes.h"
 #include "Items/ShadowSlaveItemTypes.h"
 #include "Attributes/ShadowSlaveAttributeTypes.h"
@@ -15,12 +15,23 @@ class UShadowSlaveItemDefinition;
 
 /**
  * Data-driven primary data asset describing immutable static Memory archetypes.
- * Registered with Unreal Engine's Asset Manager via PrimaryAssetId.
- * Holds verified canon classifications (Rank, Tier), static enchantments, and usage parameters.
- * Cleanly separates immutable Memory definitions from mutable owned runtime instances.
+ * Derived from UShadowSlaveContentDefinition as part of the generic static content pipeline.
+ *
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. Specialized Content Definition: Inherits common metadata (ContentId, DisplayName, Description,
+ *    Version, MetadataTags, ProvenanceNote) from UShadowSlaveContentDefinition.
+ * 2. Single Authoritative ID: ContentId is the single authoritative identifier. MemoryId is preserved
+ *    as a compatibility view/accessor and direct reference alias that cannot diverge from ContentId.
+ * 3. Content Type: Statically identified as EShadowSlaveContentType::Memory.
+ * 4. Memory-Specific Data: Owns verified canon classifications (Rank, Tier), static enchantments,
+ *    and usage parameters.
+ * 5. Runtime Separation: Cleanly separates immutable Memory definitions from mutable owned runtime
+ *    instances (FShadowSlaveMemoryInstance managed by UShadowSlaveMemoryComponent).
+ * 6. Static Infrastructure: Participates in UShadowSlaveContentRegistrySubsystem without replacing
+ *    or coupling to UShadowSlaveMemoryComponent.
  */
 UCLASS(BlueprintType)
-class SHADOWSLAVE_API UShadowSlaveMemoryDefinition : public UPrimaryDataAsset
+class SHADOWSLAVE_API UShadowSlaveMemoryDefinition : public UShadowSlaveContentDefinition
 {
 	GENERATED_BODY()
 
@@ -29,19 +40,34 @@ public:
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
-	/* --- Identity --- */
+	/**
+	 * Validates definition configuration.
+	 * Performs generic content validation (ID, Version, ContentType) and Memory-specific validation.
+	 */
+	virtual bool IsValidDefinition(FString* OutErrorMessage = nullptr) const override;
 
-	/** Technical internal identifier for this Memory */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Identity")
-	FName MemoryId = NAME_None;
+	/* --- Identity Compatibility --- */
 
-	/** Display name shown to players in UI/logs */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Identity")
-	FText DisplayName;
+	/**
+	 * Returns the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Memory API.
+	 */
+	UFUNCTION(BlueprintPure, Category = "ShadowSlave|Memory|Identity")
+	FName GetMemoryId() const { return ContentId; }
 
-	/** Narrative or description text */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ShadowSlave|Memory|Identity", meta = (MultiLine = true))
-	FText Description;
+	/**
+	 * Sets the single authoritative stable content identifier (ContentId).
+	 * Provided for backwards compatibility with the existing Memory API.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ShadowSlave|Memory|Identity")
+	void SetMemoryId(FName InMemoryId) { ContentId = InMemoryId; }
+
+	/**
+	 * Direct reference compatibility alias to the single authoritative ContentId.
+	 * Ensures existing C++ call sites accessing MemoryId directly continue to compile
+	 * and are physically guaranteed never to diverge from ContentId.
+	 */
+	FName& MemoryId = ContentId;
 
 	/* --- Canon & Technical Classification --- */
 
